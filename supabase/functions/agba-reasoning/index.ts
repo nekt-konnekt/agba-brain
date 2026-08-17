@@ -41,10 +41,10 @@ Deno.serve(async (req) => {
   let reportContext = "";
   if (reportIds.length) {
     const { data: reports, error: reportsError } = await admin.from("agba_reports")
-      .select("id, report_text, department_id, created_at").in("id", reportIds).eq("organization_id", body.organization_id);
+      .select("id, raw_text, department_id, created_at").in("id", reportIds).eq("organization_id", body.organization_id);
     if (reportsError) return json({ error: "evidence_lookup_failed", detail: reportsError.message }, 400);
     if (!reports || reports.length !== reportIds.length) return json({ error: "evidence_not_found" }, 400);
-    reportContext = reports.map((r: any) => `REPORT ${r.id}\n${r.report_text}`).join("\n\n");
+    reportContext = reports.map((r: any) => `REPORT ${r.id}\n${r.raw_text}`).join("\n\n");
   }
 
   const question = body.question ?? "Identify the most important operational issue, explain confidence and severity, and recommend an action.";
@@ -80,6 +80,6 @@ Deno.serve(async (req) => {
   const { data: evidence, error: evidenceError } = await admin.from("agba_reasoning_evidence").insert(evidenceRows).select("*");
   if (evidenceError) { await admin.from("agba_reasoning_items").delete().eq("id", item.id); return json({ error: "evidence_create_failed", detail: evidenceError.message }, 400); }
 
-  await admin.from("agba_audit_logs").insert({ action: "reasoning.generated", entity_id: item.id, organization_id: body.organization_id, actor_user_id: actor.id });
+  await admin.from("agba_audit_logs").insert({ action: "reasoning.generated", entity_id: item.id, organization_id: body.organization_id, actor_agba_user_id: actor.id });
   return json({ item, evidence, reasoning: { ...reasoning, provider: "gemini" } }, 201);
 });
