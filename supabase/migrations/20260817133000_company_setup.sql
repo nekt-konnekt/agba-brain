@@ -50,14 +50,14 @@ before insert or update of organization_id, role_id, department_id
 on public.agba_users
 for each row execute function agba_private.validate_user_assignment();
 
--- Only one active CEO per organization.
+-- CEO has no department in V1, so one active department-less user per organization is the CEO.
 create unique index if not exists uq_agba_one_active_ceo
 on public.agba_users (organization_id)
-where active = true and role_id = (select id from public.agba_roles where code = 'ceo');
+where active = true and department_id is null;
 
--- Only one active Department Head per department in V1.
+-- Department Heads own exactly one department in V1, so one active user per department.
 create unique index if not exists uq_agba_one_active_department_head
 on public.agba_users (department_id)
-where active = true and role_id = (select id from public.agba_roles where code = 'department_head');
+where active = true and department_id is not null;
 
 revoke all on function agba_private.validate_user_assignment() from public, anon, authenticated;
