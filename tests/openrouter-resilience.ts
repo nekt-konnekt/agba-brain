@@ -18,7 +18,8 @@ const run = async (label: string, mock: (model: string, attempt: number) => Resp
   console.log(`PASS ${label}`);
 };
 
-await run("429 retries then falls back", (model) => model === PRIMARY_MODEL ? response({ error: "rate limited" }, 429) : response(fallbackPayload), fallbackModel, 3);
+// 429 is a quota/rate-limit signal. Do not waste the retry budget retrying the same model.
+await run("429 immediately falls back", (model) => model === PRIMARY_MODEL ? response({ error: "rate limited" }, 429) : response(fallbackPayload), fallbackModel, 2);
 await run("5xx retries then falls back", (model) => model === PRIMARY_MODEL ? response({ error: "upstream" }, 503) : response(fallbackPayload), fallbackModel, 3);
 await run("timeout retries then falls back", (model) => model === PRIMARY_MODEL ? (() => { throw new DOMException("timed out", "AbortError"); })() : response(fallbackPayload), fallbackModel, 3);
 await run("malformed provider JSON falls back", (model) => model === PRIMARY_MODEL ? response("not-json") : response(fallbackPayload), fallbackModel, 2);
@@ -34,7 +35,8 @@ try {
   throw new Error("all-fail case unexpectedly succeeded");
 } catch (error) {
   if (!(error instanceof OpenRouterError) || error.code !== "openrouter_unavailable") throw error;
-  const expectedCalls = (1 + FALLBACK_MODELS.length) * 2;
+  // 429 is never retried. Every configured model gets exactly one attempt.
+  const expectedCalls = 1 + FALLBACK_MODELS.length;
   if (allFailCalls !== expectedCalls) throw new Error(`all-fail case expected ${expectedCalls} calls, got ${allFailCalls}`);
   console.log("PASS all providers exhausted returns controlled error");
 }
