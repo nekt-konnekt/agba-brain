@@ -18,8 +18,8 @@ jobs:
 
       - name: Run Agba E2E
         env:
-          SUPABASE_URL: ${{ secrets.https://iijhsdaqaqywzpavdonn.supabase.co }}
-          SUPABASE_ANON_KEY: ${{ secrets.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlpamhzZGFxYXF5d3pwYXZkb25uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NjI4NzUsImV4cCI6MjEwMjUzODg3NX0.Kc9B59QLAo8XeIrZkEpc5Iq3g2w_8EmbbZvl0zUjMuM }}
-          AGBA_TEST_EMAIL: ${{ secrets.agbe-test@agba.work }}
-          AGBA_TEST_PASSWORD: ${{ secrets.b3nJ@m1nblack }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          AGBA_TEST_EMAIL: ${{ secrets.AGBA_TEST_EMAIL }}
+          AGBA_TEST_PASSWORD: ${{ secrets.AGBA_TEST_PASSWORD }}
         run: deno run --allow-net tests/agba-e2e.ts
