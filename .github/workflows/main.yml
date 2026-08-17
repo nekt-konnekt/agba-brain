@@ -5,7 +5,8 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+  environment: Agba
+  runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
