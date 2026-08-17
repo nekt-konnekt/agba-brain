@@ -8,6 +8,32 @@ const corsHeaders = {
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+async function callGemini(geminiKey: string, prompt: string) {
+  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
+  let lastResponse: Response | null = null;
+  let lastText = "";
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
+      }),
+    });
+    const text = await response.text();
+    if (response.ok) return { response, text };
+
+    lastResponse = response;
+    lastText = text;
+    if (response.status !== 429 && response.status < 500) break;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 800 * 2 ** attempt));
+  }
+
+  return { response: lastResponse!, text: lastText };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -50,12 +76,7 @@ Deno.serve(async (req) => {
   const question = body.question ?? "Identify the most important operational issue, explain confidence and severity, and recommend an action.";
   const prompt = `You are Agba, a company's operating brain. Reason only from the supplied evidence. Do not invent facts.\n\nTask: ${question}\n\nEvidence:\n${reportContext}\n\nReturn ONLY valid JSON with exactly these fields: {"type":"observation|issue|recommendation|decision","title":"short title","summary":"concise evidence-grounded summary","confidence":"high|medium|low","confidence_reason":"why the evidence supports this confidence","severity":"low|medium|high|critical|null","severity_reason":"why this severity is justified","recommended_action":"specific practical action or null"}.`;
 
-  const geminiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-    body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json" } }),
-  });
-  const geminiText = await geminiResponse.text();
+  const { response: geminiResponse, text: geminiText } = await callGemini(geminiKey, prompt);
   if (!geminiResponse.ok) return json({ error: "gemini_request_failed", status: geminiResponse.status, detail: geminiText }, 502);
 
   let reasoning: any;
