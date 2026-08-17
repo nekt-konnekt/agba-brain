@@ -4,175 +4,62 @@ const url = Deno.env.get("SUPABASE_URL");
 const anon = Deno.env.get("SUPABASE_ANON_KEY");
 const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 if (!url || !anon || !serviceRole) throw new Error("Set SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY");
-
 const admin = createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false } });
 const testEmail = `agba-e2e-ceo-${Date.now()}@gmail.com`;
 const testPassword = `AgbaE2E-${crypto.randomUUID()}-X9!`;
 const { data: createdAuth, error: createAuthError } = await admin.auth.admin.createUser({ email: testEmail, password: testPassword, email_confirm: true, user_metadata: { full_name: "Agba E2E CEO" } });
 if (createAuthError || !createdAuth.user) throw new Error(`E2E CEO creation failed: ${createAuthError?.message ?? "no user"}`);
-
 let organizationId: string | null = null;
 const createdHeadAuthIds: string[] = [];
-const cleanup = async () => {
-  if (organizationId) await admin.from("agba_organizations").delete().eq("id", organizationId);
-  for (const authId of createdHeadAuthIds) await admin.auth.admin.deleteUser(authId);
-  await admin.auth.admin.deleteUser(createdAuth.user.id);
-};
-
-const parse = async (response: Response) => {
-  const text = await response.text();
-  try { return { text, data: JSON.parse(text) }; } catch { return { text, data: null }; }
-};
-
+const cleanup = async () => { if (organizationId) await admin.from("agba_organizations").delete().eq("id", organizationId); for (const authId of createdHeadAuthIds) await admin.auth.admin.deleteUser(authId); await admin.auth.admin.deleteUser(createdAuth.user.id); };
+const parse = async (response: Response) => { const text = await response.text(); try { return { text, data: JSON.parse(text) }; } catch { return { text, data: null }; } };
 try {
   const supabase = createClient(url, anon);
   const { data: auth, error: signInError } = await supabase.auth.signInWithPassword({ email: testEmail, password: testPassword });
   if (signInError || !auth.session) throw new Error(`AUTH FAIL: ${signInError?.message ?? "no session"}`);
-
   const headers = { Authorization: `Bearer ${auth.session.access_token}`, apikey: anon, "Content-Type": "application/json" };
   const base = `${url}/functions/v1`;
   const pass = (label: string) => console.log(`PASS ${label}`);
   const fail = (label: string, value: unknown): never => { console.error(`FAIL ${label}`, value); Deno.exit(1); };
-  const expectStatus = async (label: string, response: Response, expected: number) => {
-    const parsed = await parse(response);
-    if (response.status !== expected) fail(label, { status: response.status, body: parsed.data ?? parsed.text });
-    return parsed.data;
-  };
+  const expectStatus = async (label: string, response: Response, expected: number) => { const parsed = await parse(response); if (response.status !== expected) fail(label, { status: response.status, body: parsed.data ?? parsed.text }); return parsed.data; };
 
-  // Authentication and authorization boundaries.
-  const noAuth = await fetch(`${base}/agba-reasoning`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organization_id: "00000000-0000-0000-0000-000000000000", evidence: [] }) });
-  await expectStatus("missing authorization", noAuth, 401);
-  pass("missing authorization rejected");
+  const noAuth = await fetch(`${base}/agba-reasoning`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ organization_id: "00000000-0000-0000-0000-000000000000", evidence: [] }) }); await expectStatus("missing authorization", noAuth, 401); pass("missing authorization rejected");
+  const unknownOrg = await fetch(`${base}/agba-reasoning`, { method: "POST", headers, body: JSON.stringify({ organization_id: "00000000-0000-0000-0000-000000000000", evidence: [{ report_id: "00000000-0000-0000-0000-000000000000" }] }) }); await expectStatus("unregistered organization", unknownOrg, 403); pass("authorization rejects unregistered organization");
 
-  const unknownOrg = await fetch(`${base}/agba-reasoning`, { method: "POST", headers, body: JSON.stringify({ organization_id: "00000000-0000-0000-0000-000000000000", evidence: [{ report_id: "00000000-0000-0000-0000-000000000000" }] }) });
-  await expectStatus("unregistered organization", unknownOrg, 403);
-  pass("authorization rejects unregistered organization");
+  const setup = await fetch(`${base}/company-setup`, { method: "POST", headers, body: JSON.stringify({ company: { name: `Agba E2E ${Date.now()}`, slug: `agba-e2e-${Date.now()}`, timezone: "Africa/Lagos", currency_code: "NGN" }, ceo: { full_name: "Agba E2E CEO" }, departments: [{ name: "Production", slug: "production", head: { full_name: "Production Head", email: `agba-e2e-prod-${Date.now()}@gmail.com` } }, { name: "Sales", slug: "sales", head: { full_name: "Sales Head", email: `agba-e2e-sales-${Date.now()}@gmail.com` } }] }) });
+  const setupData = await expectStatus("company setup", setup, 201); organizationId = setupData.organization.id; const productionId = setupData.departments.find((d: any) => d.slug === "production").id; const salesId = setupData.departments.find((d: any) => d.slug === "sales").id; pass("company setup with multiple departments");
+  const { data: headProfiles, error: headProfilesError } = await admin.from("agba_users").select("id,auth_user_id,department_id,email").eq("organization_id", organizationId).not("department_id", "is", null); if (headProfilesError || !headProfiles || headProfiles.length !== 2) fail("department head provisioning", headProfilesError ?? headProfiles);
+  for (const head of headProfiles) { createdHeadAuthIds.push(head.auth_user_id); const password = `AgbaHead-${crypto.randomUUID()}-X9!`; const { error } = await admin.auth.admin.updateUserById(head.auth_user_id, { password }); if (error) fail("department head password setup", error.message); head.testPassword = password; } pass("multiple department identities provisioned");
 
-  // Provision multiple departments so scope and cross-department behavior can be exercised.
-  const setup = await fetch(`${base}/company-setup`, { method: "POST", headers, body: JSON.stringify({
-    company: { name: `Agba E2E ${Date.now()}`, slug: `agba-e2e-${Date.now()}`, timezone: "Africa/Lagos", currency_code: "NGN" },
-    ceo: { full_name: "Agba E2E CEO" },
-    departments: [
-      { name: "Production", slug: "production", head: { full_name: "Production Head", email: `agba-e2e-prod-${Date.now()}@gmail.com` } },
-      { name: "Sales", slug: "sales", head: { full_name: "Sales Head", email: `agba-e2e-sales-${Date.now()}@gmail.com` } }
-    ]
-  }) });
-  const setupData = await expectStatus("company setup", setup, 201);
-  organizationId = setupData.organization.id;
-  const productionId = setupData.departments.find((d: any) => d.slug === "production").id;
-  const salesId = setupData.departments.find((d: any) => d.slug === "sales").id;
-  pass("company setup with multiple departments");
-
-  // Recover E2E-created department-head auth IDs and set deterministic passwords.
-  const { data: headProfiles, error: headProfilesError } = await admin.from("agba_users").select("id,auth_user_id,department_id,email").eq("organization_id", organizationId).not("department_id", "is", null);
-  if (headProfilesError || !headProfiles || headProfiles.length !== 2) fail("department head provisioning", headProfilesError ?? headProfiles);
-  for (const head of headProfiles) {
-    createdHeadAuthIds.push(head.auth_user_id);
-    const password = `AgbaHead-${crypto.randomUUID()}-X9!`;
-    const { error } = await admin.auth.admin.updateUserById(head.auth_user_id, { password });
-    if (error) fail("department head password setup", error.message);
-    head.testPassword = password;
-  }
-  pass("multiple department identities provisioned");
-
-  // Report ingestion validation and idempotency.
   const reportText = "We received 120 sticker orders today. 85 orders were completed. 20 are waiting for customer artwork approval. 15 are blocked because transparent vinyl is out of stock. A corporate order worth ₦480,000 is due tomorrow. ₦95,000 was spent today on emergency materials.";
   const idempotencyKey = `agba-e2e-report-${Date.now()}`;
-  const ingestion = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ report_text: reportText, department_id: productionId, source: "e2e-test" }) });
-  const ingestionData = await expectStatus("report ingestion", ingestion, 201);
-  const reportId = ingestionData.report.id;
-  if (ingestionData.replayed !== false) fail("first report ingestion replay flag", ingestionData);
-  pass("report ingestion");
+  const ingestion = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ report_text: reportText, department_id: productionId, source: "e2e-test" }) }); const ingestionData = await expectStatus("report ingestion", ingestion, 201); const reportId = ingestionData.report.id; if (ingestionData.replayed !== false) fail("first report ingestion replay flag", ingestionData); pass("report ingestion");
+  const replay = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ report_text: "THIS MUST NOT CREATE A SECOND REPORT", department_id: productionId, source: "replay-test" }) }); const replayData = await expectStatus("report idempotency replay", replay, 200); if (!replayData.replayed || replayData.report?.id !== reportId) fail("report idempotency", replayData); pass("report ingestion idempotency");
 
-  const replay = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ report_text: "THIS MUST NOT CREATE A SECOND REPORT", department_id: productionId, source: "replay-test" }) });
-  const replayData = await expectStatus("report idempotency replay", replay, 200);
-  if (!replayData.replayed || replayData.report?.id !== reportId) fail("report idempotency", replayData);
-  pass("report ingestion idempotency");
+  const concurrentKey = `agba-e2e-concurrent-${Date.now()}`;
+  const concurrentResponses = await Promise.all(Array.from({ length: 8 }, (_, i) => fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": concurrentKey }, body: JSON.stringify({ report_text: `Concurrent idempotency report ${i}`, department_id: productionId, source: "concurrency-test" }) })));
+  const concurrentResults = await Promise.all(concurrentResponses.map(parse)); const concurrentIds = new Set(concurrentResults.map((r) => r.data?.report?.id).filter(Boolean)); if (concurrentIds.size !== 1 || concurrentResults.some((r) => ![200, 201].includes((r.data as any)?.status ?? 200))) { const statuses = concurrentResponses.map((r) => r.status); if (concurrentIds.size !== 1 || statuses.some((s) => ![200, 201].includes(s))) fail("concurrent report idempotency", { statuses, concurrentResults }); } pass("report idempotency under concurrency");
+  const emptyReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers, body: JSON.stringify({ report_text: "   ", department_id: productionId }) }); await expectStatus("empty report validation", emptyReport, 400); pass("report validation rejects empty text");
 
-  const emptyReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers, body: JSON.stringify({ report_text: "   ", department_id: productionId }) });
-  await expectStatus("empty report validation", emptyReport, 400);
-  pass("report validation rejects empty text");
+  const salesReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": `agba-e2e-sales-${Date.now()}` }, body: JSON.stringify({ report_text: "Sales says the ₦480,000 corporate order is still confirmed for delivery tomorrow, but the customer has not approved the final artwork. No payment has been received yet.", department_id: salesId, source: "e2e-test" }) }); const salesReportData = await expectStatus("sales report ingestion", salesReport, 201); pass("second department report ingestion");
 
-  // Reasoning with operational, financial and conflicting evidence.
-  const salesReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { ...headers, "Idempotency-Key": `agba-e2e-sales-${Date.now()}` }, body: JSON.stringify({ report_text: "Sales says the ₦480,000 corporate order is still confirmed for delivery tomorrow, but the customer has not approved the final artwork. No payment has been received yet.", department_id: salesId, source: "e2e-test" }) });
-  const salesReportData = await expectStatus("sales report ingestion", salesReport, 201);
-  pass("second department report ingestion");
+  const reasoning = await fetch(`${base}/agba-reasoning`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId, department_id: productionId, question: "Identify the most important operational issue. Reconcile the production and sales evidence, calculate the blocked-order percentage from 15 blocked out of 120 total, identify the ₦480,000 financial exposure and distinguish confirmed facts from uncertainty. Explain confidence and severity and recommend a concrete action.", evidence: [{ report_id: reportId }, { report_id: salesReportData.report.id }] }) }); const reasoningData = await expectStatus("reasoning", reasoning, 201); if (!reasoningData.reasoning?.confidence_reason || !reasoningData.reasoning?.severity_reason) fail("reasoning explanations", reasoningData); if (!Array.isArray(reasoningData.evidence) || reasoningData.evidence.length !== 2) fail("reasoning evidence links", reasoningData); if (reasoningData.reasoning?.provider !== "openrouter" || !reasoningData.reasoning?.model) fail("reasoning provider/model", reasoningData); const reasoningBlob = JSON.stringify(reasoningData.reasoning); if (!reasoningBlob.includes("480") && !reasoningBlob.includes("₦")) fail("financial exposure preserved in reasoning", reasoningData.reasoning); pass(`OpenRouter reasoning (${reasoningData.reasoning.model}) with confidence/severity, conflict and financial evidence`);
+  const state = await fetch(`${base}/company-state-v2`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId, reasoning_item_id: reasoningData.item.id }) }); const stateData = await expectStatus("company state", state, 201); if (!stateData.state?.source_reasoning_item_id || stateData.state.source_reasoning_item_id !== reasoningData.item.id) fail("company state evidence", stateData); pass("company state materialization with source trace");
 
-  const reasoning = await fetch(`${base}/agba-reasoning`, { method: "POST", headers, body: JSON.stringify({
-    organization_id: organizationId,
-    department_id: productionId,
-    question: "Identify the most important operational issue. Reconcile the production and sales evidence, calculate the blocked-order percentage from 15 blocked out of 120 total, identify the ₦480,000 financial exposure and distinguish confirmed facts from uncertainty. Explain confidence and severity and recommend a concrete action.",
-    evidence: [{ report_id: reportId }, { report_id: salesReportData.report.id }]
-  }) });
-  const reasoningData = await expectStatus("reasoning", reasoning, 201);
-  if (!reasoningData.reasoning?.confidence_reason || !reasoningData.reasoning?.severity_reason) fail("reasoning explanations", reasoningData);
-  if (!Array.isArray(reasoningData.evidence) || reasoningData.evidence.length !== 2) fail("reasoning evidence links", reasoningData);
-  if (reasoningData.reasoning?.provider !== "openrouter" || !reasoningData.reasoning?.model) fail("reasoning provider/model", reasoningData);
-  const reasoningBlob = JSON.stringify(reasoningData.reasoning);
-  if (!reasoningBlob.includes("480") && !reasoningBlob.includes("₦")) fail("financial exposure preserved in reasoning", reasoningData.reasoning);
-  pass(`OpenRouter reasoning (${reasoningData.reasoning.model}) with confidence/severity, conflict and financial evidence`);
+  const briefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId }) }); const briefingData = await expectStatus("CEO briefing", briefing, 201); if (!briefingData.briefing?.summary || !Array.isArray(briefingData.items)) fail("CEO briefing output", briefingData); if (briefingData.provider !== "openrouter" || !briefingData.model) fail("briefing provider/model", briefingData); if (briefingData.items.some((item: any) => !item.title || !item.content)) fail("briefing item schema", briefingData.items); pass(`CEO briefing generation (${briefingData.model})`);
+  const concurrentBriefings = await Promise.all(Array.from({ length: 3 }, () => fetch(`${base}/daily-briefing-v2`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId, briefing_date: new Date().toISOString().slice(0, 10) }) }))); const concurrentBriefData = await Promise.all(concurrentBriefings.map(parse)); if (concurrentBriefings.some((r) => r.status !== 201) || new Set(concurrentBriefData.map((r) => r.data?.briefing?.id).filter(Boolean)).size !== 1) fail("concurrent briefing generation", { statuses: concurrentBriefings.map((r) => r.status), results: concurrentBriefData }); pass("briefing generation under concurrency");
 
-  // Company state must preserve the reasoning source.
-  const state = await fetch(`${base}/company-state-v2`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId, reasoning_item_id: reasoningData.item.id }) });
-  const stateData = await expectStatus("company state", state, 201);
-  if (!stateData.state?.source_reasoning_item_id || stateData.state.source_reasoning_item_id !== reasoningData.item.id) fail("company state evidence", stateData);
-  pass("company state materialization with source trace");
+  const productionHead = headProfiles.find((h: any) => h.department_id === productionId) as any; const { data: prodAuth, error: prodSignInError } = await createClient(url, anon).auth.signInWithPassword({ email: productionHead.email, password: productionHead.testPassword }); if (prodSignInError || !prodAuth.session) fail("production head authentication", prodSignInError?.message ?? "no session"); const prodHeaders = { Authorization: `Bearer ${prodAuth.session.access_token}`, apikey: anon, "Content-Type": "application/json" };
+  const crossDeptReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ report_text: "Unauthorized cross-department report", department_id: salesId, source: "scope-test" }) }); await expectStatus("department head report scope", crossDeptReport, 403); pass("department head cannot submit another department report");
+  const crossDeptReasoning = await fetch(`${base}/agba-reasoning`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: salesId, evidence: [{ report_id: salesReportData.report.id }] }) }); await expectStatus("department head reasoning scope", crossDeptReasoning, 403); pass("department head cannot reason outside department scope");
+  const crossDeptBriefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: salesId }) }); await expectStatus("department head briefing scope", crossDeptBriefing, 403); pass("department head cannot request another department briefing");
+  const ownBriefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: productionId }) }); await expectStatus("department head own briefing", ownBriefing, 201); pass("department head can request own department briefing");
+  const prodDb = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${prodAuth.session.access_token}` } } }); const { data: visibleReports, error: visibleReportsError } = await prodDb.from("agba_reports").select("id,department_id").eq("organization_id", organizationId); if (visibleReportsError) fail("department head RLS report query", visibleReportsError); if ((visibleReports ?? []).some((r: any) => r.department_id === salesId)) fail("department head RLS isolation", visibleReports); pass("department head database read boundary");
 
-  // CEO briefing must consume the state and preserve OpenRouter metadata.
-  const briefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers, body: JSON.stringify({ organization_id: organizationId }) });
-  const briefingData = await expectStatus("CEO briefing", briefing, 201);
-  if (!briefingData.briefing?.summary || !Array.isArray(briefingData.items)) fail("CEO briefing output", briefingData);
-  if (briefingData.provider !== "openrouter" || !briefingData.model) fail("briefing provider/model", briefingData);
-  if (briefingData.items.some((item: any) => !item.title || !item.content)) fail("briefing item schema", briefingData.items);
-  pass(`CEO briefing generation (${briefingData.model})`);
+  const invalidJson = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { Authorization: headers.Authorization, apikey: anon, "Content-Type": "application/json" }, body: "{not-json" }); await expectStatus("malformed report JSON", invalidJson, 400); pass("malformed JSON rejected cleanly");
+  const briefingMissingOrg = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers, body: JSON.stringify({}) }); await expectStatus("briefing input validation", briefingMissingOrg, 400); pass("briefing input validation");
+  const dbFailure = await fetch(`${base}/report-ingestion`, { method: "POST", headers, body: JSON.stringify({ report_text: "Foreign key failure should be handled", department_id: productionId, supersedes_report_id: crypto.randomUUID(), source: "db-failure-test" }) }); await expectStatus("database constraint failure", dbFailure, 400); pass("database constraint failure handled cleanly");
 
-  // Department-head authorization and information boundary tests.
-  const productionHead = headProfiles.find((h: any) => h.department_id === productionId) as any;
-  const { data: prodAuth, error: prodSignInError } = await createClient(url, anon).auth.signInWithPassword({ email: productionHead.email, password: productionHead.testPassword });
-  if (prodSignInError || !prodAuth.session) fail("production head authentication", prodSignInError?.message ?? "no session");
-  const prodHeaders = { Authorization: `Bearer ${prodAuth.session.access_token}`, apikey: anon, "Content-Type": "application/json" };
-
-  const crossDeptReport = await fetch(`${base}/report-ingestion`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ report_text: "Unauthorized cross-department report", department_id: salesId, source: "scope-test" }) });
-  await expectStatus("department head report scope", crossDeptReport, 403);
-  pass("department head cannot submit another department report");
-
-  const crossDeptReasoning = await fetch(`${base}/agba-reasoning`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: salesId, evidence: [{ report_id: salesReportData.report.id }] }) });
-  await expectStatus("department head reasoning scope", crossDeptReasoning, 403);
-  pass("department head cannot reason outside department scope");
-
-  const crossDeptBriefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: salesId }) });
-  await expectStatus("department head briefing scope", crossDeptBriefing, 403);
-  pass("department head cannot request another department briefing");
-
-  const ownBriefing = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers: prodHeaders, body: JSON.stringify({ organization_id: organizationId, department_id: productionId }) });
-  await expectStatus("department head own briefing", ownBriefing, 201);
-  pass("department head can request own department briefing");
-
-  // Database read boundary sanity check through the authenticated department head client.
-  const prodDb = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${prodAuth.session.access_token}` } } });
-  const { data: visibleReports, error: visibleReportsError } = await prodDb.from("agba_reports").select("id,department_id").eq("organization_id", organizationId);
-  if (visibleReportsError) fail("department head RLS report query", visibleReportsError);
-  if ((visibleReports ?? []).some((r: any) => r.department_id === salesId)) fail("department head RLS isolation", visibleReports);
-  pass("department head database read boundary");
-
-  // Malformed-input resilience. We deliberately do not hammer a free model to manufacture a rate-limit event.
-  const invalidJson = await fetch(`${base}/report-ingestion`, { method: "POST", headers: { Authorization: headers.Authorization, apikey: anon, "Content-Type": "application/json" }, body: "{not-json" });
-  await expectStatus("malformed report JSON", invalidJson, 400);
-  pass("malformed JSON rejected cleanly");
-
-  const briefingMissingOrg = await fetch(`${base}/daily-briefing-v2`, { method: "POST", headers, body: JSON.stringify({}) });
-  await expectStatus("briefing input validation", briefingMissingOrg, 400);
-  pass("briefing input validation");
-
-  // Audit trail must contain the reasoning event.
-  const db = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${auth.session.access_token}` } } });
-  const { data: audit, error: auditError } = await db.from("agba_audit_logs").select("id,action,entity_id,organization_id").eq("entity_id", reasoningData.item.id).eq("action", "reasoning.generated").maybeSingle();
-  if (auditError || !audit) fail("audit trail", auditError ?? "missing audit row");
-  if (audit.organization_id !== organizationId) fail("audit organization boundary", audit);
-  pass("audit trail");
-
-  console.log("AGBA HARDENING E2E PASS");
-  console.log(JSON.stringify({ organization_id: organizationId, departments: [productionId, salesId], reports: [reportId, salesReportData.report.id], reasoning: reasoningData.reasoning, state: stateData.state, briefing: briefingData.briefing }, null, 2));
-} finally {
-  await cleanup();
-}
+  const db = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${auth.session.access_token}` } } }); const { data: audit, error: auditError } = await db.from("agba_audit_logs").select("id,action,entity_id,organization_id").eq("entity_id", reasoningData.item.id).eq("action", "reasoning.generated").maybeSingle(); if (auditError || !audit) fail("audit trail", auditError ?? "missing audit row"); if (audit.organization_id !== organizationId) fail("audit organization boundary", audit); pass("audit trail");
+  console.log("AGBA HARDENING E2E PASS"); console.log(JSON.stringify({ organization_id: organizationId, departments: [productionId, salesId], reports: [reportId, salesReportData.report.id], reasoning: reasoningData.reasoning, state: stateData.state, briefing: briefingData.briefing }, null, 2));
+} finally { await cleanup(); }
