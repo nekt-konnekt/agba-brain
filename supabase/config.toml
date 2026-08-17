@@ -1,0 +1,14 @@
+# Agba Supabase project configuration
+# Production deployment is managed from the main branch.
+
+[functions.company-setup]
+verify_jwt = true
+
+[functions.report-ingestion]
+verify_jwt = true
+
+[functions.agba-reasoning]
+verify_jwt = true
+
+[functions.daily-briefing]
+verify_jwt = true
