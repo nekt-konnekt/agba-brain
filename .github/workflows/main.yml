@@ -1,0 +1,26 @@
+name: Agba E2E Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    environment: Agba
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run Agba E2E
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          AGBA_TEST_EMAIL: ${{ secrets.AGBA_TEST_EMAIL }}
+          AGBA_TEST_PASSWORD: ${{ secrets.AGBA_TEST_PASSWORD }}
+        run: deno run --allow-net tests/agba-e2e.ts
