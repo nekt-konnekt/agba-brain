@@ -20,7 +20,7 @@ const who = await fetch(`${base}/agba-reasoning`, { method: "POST", headers: { .
 if (who.status !== 403) fail("authorization boundary", await who.text());
 pass("authorization rejects unregistered organization");
 
-const setup = await fetch(`${base}/company-setup`, { method: "POST", headers, body: JSON.stringify({ company: { name: `Agba E2E ${Date.now()}`, slug: `agba-e2e-${Date.now()}`, timezone: "Africa/Lagos", currency_code: "NGN" }, ceo: { full_name: "Agba E2E CEO" }, departments: [{ name: "Production", slug: "production", head: { full_name: "Production Head", email: `agba-e2e-head-${Date.now()}@agba.work` } }] }) });
+const setup = await fetch(`${base}/company-setup`, { method: "POST", headers, body: JSON.stringify({ company: { name: `Agba E2E ${Date.now()}`, slug: `agba-e2e-${Date.now()}`, timezone: "Africa/Lagos", currency_code: "NGN" }, ceo: { full_name: "Agba E2E CEO" }, departments: [{ name: "Production", slug: "production", head: { full_name: "Production Head", email: `agba-e2e-head-${Date.now()}@example.com` } }] }) });
 const setupText = await setup.text();
 if (setup.status !== 201) fail("company setup", setupText);
 const setupData = JSON.parse(setupText);
