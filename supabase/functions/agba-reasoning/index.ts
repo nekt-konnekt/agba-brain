@@ -6,32 +6,27 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: { ...corsHeaders, "Content-Type": "application/json" },
+});
 
-async function callGemini(geminiKey: string, prompt: string) {
-  const endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
-  let lastResponse: Response | null = null;
-  let lastText = "";
-
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, responseMimeType: "application/json" },
-      }),
-    });
-    const text = await response.text();
-    if (response.ok) return { response, text };
-
-    lastResponse = response;
-    lastText = text;
-    if (response.status !== 429 && response.status < 500) break;
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 800 * 2 ** attempt));
-  }
-
-  return { response: lastResponse!, text: lastText };
+async function callOpenAI(apiKey: string, prompt: string) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: "gpt-5-mini",
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON." },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+  const text = await response.text();
+  return { response, text };
 }
 
 Deno.serve(async (req) => {
@@ -40,8 +35,8 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!supabaseUrl || !serviceRoleKey || !geminiKey) return json({ error: "server_configuration_error" }, 500);
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!supabaseUrl || !serviceRoleKey || !openaiKey) return json({ error: "server_configuration_error" }, 500);
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return json({ error: "missing_authorization" }, 401);
@@ -74,15 +69,15 @@ Deno.serve(async (req) => {
   }
 
   const question = body.question ?? "Identify the most important operational issue, explain confidence and severity, and recommend an action.";
-  const prompt = `You are Agba, a company's operating brain. Reason only from the supplied evidence. Do not invent facts.\n\nTask: ${question}\n\nEvidence:\n${reportContext}\n\nReturn ONLY valid JSON with exactly these fields: {"type":"observation|issue|recommendation|decision","title":"short title","summary":"concise evidence-grounded summary","confidence":"high|medium|low","confidence_reason":"why the evidence supports this confidence","severity":"low|medium|high|critical|null","severity_reason":"why this severity is justified","recommended_action":"specific practical action or null"}.`;
+  const prompt = `${question}\n\nEvidence:\n${reportContext}\n\nReturn ONLY valid JSON with exactly these fields: {"type":"observation|issue|recommendation|decision","title":"short title","summary":"concise evidence-grounded summary","confidence":"high|medium|low","confidence_reason":"why the evidence supports this confidence","severity":"low|medium|high|critical|null","severity_reason":"why this severity is justified","recommended_action":"specific practical action or null"}.`;
 
-  const { response: geminiResponse, text: geminiText } = await callGemini(geminiKey, prompt);
-  if (!geminiResponse.ok) return json({ error: "gemini_request_failed", status: geminiResponse.status, detail: geminiText }, 502);
+  const { response: openaiResponse, text: openaiText } = await callOpenAI(openaiKey, prompt);
+  if (!openaiResponse.ok) return json({ error: "openai_request_failed", status: openaiResponse.status, detail: openaiText }, 502);
 
   let reasoning: any;
-  try { reasoning = JSON.parse(JSON.parse(geminiText).candidates?.[0]?.content?.parts?.[0]?.text ?? ""); }
-  catch { return json({ error: "gemini_invalid_json", detail: geminiText }, 502); }
-  if (!reasoning?.type || !reasoning?.title || !reasoning?.summary || !reasoning?.confidence_reason || !reasoning?.severity_reason) return json({ error: "gemini_invalid_reasoning", detail: reasoning }, 502);
+  try { reasoning = JSON.parse(JSON.parse(openaiText).choices?.[0]?.message?.content ?? ""); }
+  catch { return json({ error: "openai_invalid_json", detail: openaiText }, 502); }
+  if (!reasoning?.type || !reasoning?.title || !reasoning?.summary || !reasoning?.confidence_reason || !reasoning?.severity_reason) return json({ error: "openai_invalid_reasoning", detail: reasoning }, 502);
 
   const { data: item, error: itemError } = await admin.from("agba_reasoning_items").insert({ organization_id: body.organization_id, department_id: body.department_id ?? null, type: reasoning.type, title: reasoning.title.trim(), summary: reasoning.summary.trim(), confidence: reasoning.confidence ?? "medium", severity: reasoning.severity ?? null, recommended_action: reasoning.recommended_action ?? null, created_by: actor.id }).select("*").single();
   if (itemError || !item) return json({ error: "reasoning_item_create_failed", detail: itemError?.message }, 400);
@@ -92,5 +87,5 @@ Deno.serve(async (req) => {
   if (evidenceError) { await admin.from("agba_reasoning_items").delete().eq("id", item.id); return json({ error: "evidence_create_failed", detail: evidenceError.message }, 400); }
 
   await admin.from("agba_audit_logs").insert({ action: "reasoning.generated", entity_id: item.id, organization_id: body.organization_id, actor_agba_user_id: actor.id });
-  return json({ item, evidence, reasoning: { ...reasoning, provider: "gemini" } }, 201);
+  return json({ item, evidence, reasoning: { ...reasoning, provider: "openai" } }, 201);
 });
