@@ -2,6 +2,7 @@ export const PRIMARY_MODEL = "poolside/laguna-xs-2.1:free";
 export const FALLBACK_MODELS = [
   "nvidia/nemotron-3-nano-30b-a3b:free",
   "openai/gpt-oss-20b:free",
+  "openrouter/free",
 ];
 
 export class OpenRouterError extends Error {
