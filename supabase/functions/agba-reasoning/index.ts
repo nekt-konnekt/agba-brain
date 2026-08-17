@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
   const question = body.question ?? "Identify the most important operational issue, explain confidence and severity, and recommend an action.";
   const prompt = `You are Agba, a company's operating brain. Reason only from the supplied evidence. Do not invent facts.\n\nTask: ${question}\n\nEvidence:\n${reportContext}\n\nReturn ONLY valid JSON with exactly these fields: {"type":"observation|issue|recommendation|decision","title":"short title","summary":"concise evidence-grounded summary","confidence":"high|medium|low","confidence_reason":"why the evidence supports this confidence","severity":"low|medium|high|critical|null","severity_reason":"why this severity is justified","recommended_action":"specific practical action or null"}.`;
 
-  const geminiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+  const geminiResponse = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
     body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json" } }),
@@ -63,17 +63,7 @@ Deno.serve(async (req) => {
   catch { return json({ error: "gemini_invalid_json", detail: geminiText }, 502); }
   if (!reasoning?.type || !reasoning?.title || !reasoning?.summary || !reasoning?.confidence_reason || !reasoning?.severity_reason) return json({ error: "gemini_invalid_reasoning", detail: reasoning }, 502);
 
-  const { data: item, error: itemError } = await admin.from("agba_reasoning_items").insert({
-    organization_id: body.organization_id,
-    department_id: body.department_id ?? null,
-    type: reasoning.type,
-    title: reasoning.title.trim(),
-    summary: reasoning.summary.trim(),
-    confidence: reasoning.confidence ?? "medium",
-    severity: reasoning.severity ?? null,
-    recommended_action: reasoning.recommended_action ?? null,
-    created_by: actor.id,
-  }).select("*").single();
+  const { data: item, error: itemError } = await admin.from("agba_reasoning_items").insert({ organization_id: body.organization_id, department_id: body.department_id ?? null, type: reasoning.type, title: reasoning.title.trim(), summary: reasoning.summary.trim(), confidence: reasoning.confidence ?? "medium", severity: reasoning.severity ?? null, recommended_action: reasoning.recommended_action ?? null, created_by: actor.id }).select("*").single();
   if (itemError || !item) return json({ error: "reasoning_item_create_failed", detail: itemError?.message }, 400);
 
   const evidenceRows = body.evidence.map((e: any) => ({ reasoning_item_id: item.id, report_id: e.report_id ?? null, report_entry_id: e.report_entry_id ?? null, observation_id: e.observation_id ?? null, issue_id: e.issue_id ?? null, decision_id: e.decision_id ?? null, evidence_note: e.evidence_note ?? null }));
