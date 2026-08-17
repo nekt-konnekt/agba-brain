@@ -23,4 +23,4 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           AGBA_TEST_EMAIL: ${{ secrets.AGBA_TEST_EMAIL }}
           AGBA_TEST_PASSWORD: ${{ secrets.AGBA_TEST_PASSWORD }}
-        run: deno run --allow-net tests/agba-e2e.ts
+        run: deno run --allow-net --allow-env tests/agba-e2e.ts
