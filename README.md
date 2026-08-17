@@ -24,14 +24,21 @@ agba-brain/
 │   ├── 05_DATABASE.md
 │   ├── 06_REPORTING.md
 │   ├── 07_CEO_EXPERIENCE.md
+│   ├── COMPANY_SETUP.md
+│   ├── COMPANY_SETUP_API.md
 │   ├── FLOW.md
 │   ├── V1_SCOPE.md
 │   └── DECISIONS.md
 └── supabase/
+    ├── functions/
+    │   └── company-setup/
+    │       └── index.ts
     └── migrations/
+        ├── 20260817120000_001_agba_v1_core.sql
+        └── 20260817133000_company_setup.sql
 ```
 
-The uploaded ZIP files in the repository are retained as historical artifacts. The source-of-truth files are the readable Markdown and SQL files in this tree.
+The uploaded ZIP files in the repository are retained as historical artifacts. The source-of-truth files are the readable Markdown, SQL, and TypeScript files in this tree.
 
 ## Build order
 
@@ -45,3 +52,7 @@ The uploaded ZIP files in the repository are retained as historical artifacts. T
 ## Security rule
 
 Authorization is enforced in PostgreSQL and application services. The model never decides whether a user is allowed to see a record.
+
+## Company Setup
+
+Company provisioning is server-side. The `company-setup` Supabase Edge Function authenticates the CEO, creates the organization, provisions the CEO identity, invites Department Heads, assigns departments, and marks setup complete. The browser is never trusted to assign its own Agba role or department.
