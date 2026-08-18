@@ -28,6 +28,26 @@ function parseJsonContent(payload: any): unknown {
   try { return JSON.parse(fenced); } catch { return undefined; }
 }
 
+function normalizeModelJson(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const v = { ...(value as Record<string, unknown>) };
+
+  // Providers sometimes serialize JSON null as the literal string "null".
+  if (v.severity === "null" || v.severity === "NULL" || v.severity === "") v.severity = null;
+
+  // Keep enum fields stable when a provider returns different casing.
+  for (const key of ["type", "confidence", "severity"]) {
+    if (typeof v[key] === "string") v[key] = v[key].trim().toLowerCase();
+  }
+
+  // Trim textual fields without changing their meaning.
+  for (const key of ["title", "summary", "confidence_reason", "severity_reason", "recommended_action"]) {
+    if (typeof v[key] === "string") v[key] = v[key].trim();
+  }
+
+  return v;
+}
+
 async function callOpenAICompatible(params: {
   provider: string; apiKey: string; baseUrl: string; model: string; prompt: string;
   validator: Validator; fetchImpl: FetchLike; timeoutMs: number; attempts: Attempt[];
@@ -59,7 +79,8 @@ async function callOpenAICompatible(params: {
       params.attempts.push({ provider: params.provider, model: params.model, reason: "invalid_provider_response_json" });
       return null;
     }
-    const value = parseJsonContent(payload);
+    const parsed = parseJsonContent(payload);
+    const value = normalizeModelJson(parsed);
     if (!params.validator(value)) {
       params.attempts.push({ provider: params.provider, model: params.model, reason: "invalid_model_json" });
       return null;
