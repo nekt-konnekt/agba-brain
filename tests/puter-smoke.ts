@@ -1,28 +1,20 @@
+import { init } from "npm:@heyputer/puter.js/src/init.cjs";
+
 const token = Deno.env.get("PUTER_AUTH_TOKEN");
 if (!token) throw new Error("Missing PUTER_AUTH_TOKEN");
 
-const response = await fetch("https://api.puter.com/puterai/openai/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    "Authorization": `Bearer ${token}`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    model: "gpt-5.4-nano",
-    messages: [{ role: "user", content: "Reply with exactly AGBA_PUTER_OK" }],
-  }),
-});
+const puter = init(token);
 
-const body = await response.text();
-console.log(`Puter smoke HTTP ${response.status}`);
-console.log(body);
+try {
+  const response = await puter.ai.chat(
+    "Reply with exactly AGBA_PUTER_OK",
+    { model: "gpt-5.4-nano" },
+  );
 
-if (!response.ok) {
-  throw new Error(`Puter smoke failed with HTTP ${response.status}`);
+  console.log("Puter native smoke: SUCCESS");
+  console.log(JSON.stringify(response));
+} catch (error) {
+  console.error("Puter native smoke: FAILED");
+  console.error(error instanceof Error ? error.message : String(error));
+  Deno.exit(1);
 }
-
-const parsed = JSON.parse(body);
-const content = parsed?.choices?.[0]?.message?.content;
-if (!content) throw new Error("Puter smoke response missing choices[0].message.content");
-
-console.log(`Puter smoke content: ${content}`);
