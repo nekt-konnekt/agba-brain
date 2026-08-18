@@ -20,9 +20,7 @@ export function aiConfigured(): boolean {
 }
 
 function parseJsonString(text: string): unknown {
-  const cleaned = text
-    .replace(/<think>[\s\S]*?<\/think>/gi, "")
-    .trim();
+  const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   try { return JSON.parse(cleaned); } catch {}
 
   const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
@@ -30,10 +28,16 @@ function parseJsonString(text: string): unknown {
     try { return JSON.parse(fenced.trim()); } catch {}
   }
 
-  const first = cleaned.indexOf("{");
-  const last = cleaned.lastIndexOf("}");
-  if (first >= 0 && last > first) {
-    try { return JSON.parse(cleaned.slice(first, last + 1)); } catch {}
+  const firstObject = cleaned.indexOf("{");
+  const lastObject = cleaned.lastIndexOf("}");
+  if (firstObject >= 0 && lastObject > firstObject) {
+    try { return JSON.parse(cleaned.slice(firstObject, lastObject + 1)); } catch {}
+  }
+
+  const firstArray = cleaned.indexOf("[");
+  const lastArray = cleaned.lastIndexOf("]");
+  if (firstArray >= 0 && lastArray > firstArray) {
+    try { return JSON.parse(cleaned.slice(firstArray, lastArray + 1)); } catch {}
   }
   return undefined;
 }
@@ -52,15 +56,42 @@ function parseJsonContent(payload: any): unknown {
 }
 
 function normalizeModelJson(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  if (Array.isArray(value)) {
+    const candidate = value.find((item) => item && typeof item === "object" && !Array.isArray(item));
+    return candidate ? normalizeModelJson(candidate) : value;
+  }
+  if (!value || typeof value !== "object") return value;
+
   const v = { ...(value as Record<string, unknown>) };
+
+  const aliases: Record<string, string> = {
+    kind: "type",
+    category: "type",
+    classification: "type",
+    finding_type: "type",
+    description: "summary",
+    details: "summary",
+    explanation: "summary",
+    reason: "confidence_reason",
+    rationale: "confidence_reason",
+    confidence_explanation: "confidence_reason",
+    severity_explanation: "severity_reason",
+    severity_rationale: "severity_reason",
+    action: "recommended_action",
+    next_action: "recommended_action",
+    recommendation: "recommended_action",
+    recommended_next_action: "recommended_action",
+  };
+  for (const [from, to] of Object.entries(aliases)) {
+    if (v[to] == null && v[from] != null) v[to] = v[from];
+  }
 
   for (const key of ["type", "confidence", "severity"]) {
     if (typeof v[key] === "string") v[key] = v[key].trim().toLowerCase();
   }
 
-  if (v.type === "insight" || v.type === "fact" || v.type === "finding") v.type = "observation";
-  if (v.type === "risk" || v.type === "problem" || v.type === "alert") v.type = "issue";
+  if (v.type === "insight" || v.type === "fact" || v.type === "finding" || v.type === "fact_observation") v.type = "observation";
+  if (v.type === "risk" || v.type === "problem" || v.type === "alert" || v.type === "warning") v.type = "issue";
   if (v.type === "action" || v.type === "next_step" || v.type === "next_action") v.type = "recommendation";
   if (v.type === "choice" || v.type === "management_decision") v.type = "decision";
 
@@ -72,19 +103,9 @@ function normalizeModelJson(value: unknown): unknown {
   if (v.severity === "moderate") v.severity = "medium";
   if (v.severity === "urgent") v.severity = "high";
 
-  const aliases: Record<string, string> = {
-    reason: "confidence_reason",
-    rationale: "confidence_reason",
-    confidence_explanation: "confidence_reason",
-    severity_explanation: "severity_reason",
-    action: "recommended_action",
-    next_action: "recommended_action",
-    recommendation: "recommended_action",
-  };
-  for (const [from, to] of Object.entries(aliases)) {
-    if (v[to] == null && v[from] != null) v[to] = v[from];
-  }
-
+  if (v.title == null && typeof v.summary === "string") v.title = v.summary.slice(0, 100);
+  if (v.summary == null && typeof v.title === "string") v.summary = v.title;
+  if (v.confidence == null) v.confidence = "medium";
   if (v.confidence_reason == null) v.confidence_reason = "Confidence is based on the supplied company evidence.";
   if (v.severity_reason == null) v.severity_reason = "Severity is based on the supplied company evidence.";
   if (v.recommended_action == null) v.recommended_action = null;
