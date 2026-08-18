@@ -44,18 +44,34 @@ function parseJsonString(text: string): unknown {
 
 function parseJsonContent(payload: any): unknown {
   const content = payload?.choices?.[0]?.message?.content ?? payload?.output ?? payload?.result;
-  if (typeof content === "string") return parseJsonString(content);
+  if (typeof content === "string") return parseJsonString(content) ?? content;
   if (Array.isArray(content)) {
     const text = content
       .map((part: any) => typeof part === "string" ? part : part?.text ?? part?.content ?? "")
       .join("\n");
-    return parseJsonString(text);
+    return parseJsonString(text) ?? text;
   }
   if (content && typeof content === "object") return content;
   return content;
 }
 
 function normalizeModelJson(value: unknown): unknown {
+  if (typeof value === "string") {
+    const parsed = parseJsonString(value);
+    if (parsed !== undefined) return normalizeModelJson(parsed);
+    const text = value.trim();
+    if (!text) return value;
+    return {
+      type: "observation",
+      title: text.split(/\n|[.!?]/)[0].trim().slice(0, 100) || "Agba observation",
+      summary: text,
+      confidence: "medium",
+      confidence_reason: "The model returned a non-JSON textual response; confidence is therefore limited.",
+      severity: null,
+      severity_reason: "No explicit severity was supplied by the model.",
+      recommended_action: null,
+    };
+  }
   if (Array.isArray(value)) {
     const candidate = value.find((item) => item && typeof item === "object" && !Array.isArray(item));
     return candidate ? normalizeModelJson(candidate) : value;
@@ -63,15 +79,12 @@ function normalizeModelJson(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
 
   const source = value as Record<string, unknown>;
-  const directSchemaKeys = ["type", "kind", "category", "classification", "finding_type", "title", "summary", "description", "details"];
-  const hasDirectSchemaKey = directSchemaKeys.some((key) => source[key] != null);
-  if (!hasDirectSchemaKey) {
-    for (const key of ["result", "output", "answer", "response", "reasoning", "observation", "finding", "data", "content"]) {
+  if (!source.type && !source.title && !source.summary) {
+    for (const key of ["result", "output", "answer", "response", "reasoning", "observation", "finding", "data", "content", "message"]) {
       const nested = source[key];
-      if (nested && typeof nested === "object") return normalizeModelJson(nested);
-      if (typeof nested === "string") {
-        const parsed = parseJsonString(nested);
-        if (parsed && typeof parsed === "object") return normalizeModelJson(parsed);
+      if (nested != null) {
+        const normalized = normalizeModelJson(nested);
+        if (normalized && typeof normalized === "object") return normalized;
       }
     }
   }
@@ -82,6 +95,16 @@ function normalizeModelJson(value: unknown): unknown {
     category: "type",
     classification: "type",
     finding_type: "type",
+    findingType: "type",
+    item_type: "type",
+    itemType: "type",
+    name: "title",
+    headline: "title",
+    subject: "title",
+    issue: "title",
+    message: "summary",
+    text: "summary",
+    content: "summary",
     description: "summary",
     details: "summary",
     explanation: "confidence_reason",
@@ -103,10 +126,10 @@ function normalizeModelJson(value: unknown): unknown {
     if (typeof v[key] === "string") v[key] = v[key].trim().toLowerCase();
   }
 
-  if (v.type === "insight" || v.type === "fact" || v.type === "finding" || v.type === "fact_observation") v.type = "observation";
-  if (v.type === "risk" || v.type === "problem" || v.type === "alert" || v.type === "warning") v.type = "issue";
-  if (v.type === "action" || v.type === "next_step" || v.type === "next_action") v.type = "recommendation";
-  if (v.type === "choice" || v.type === "management_decision") v.type = "decision";
+  if (v.type === "insight" || v.type === "fact" || v.type === "finding" || v.type === "fact_observation" || v.type === "info" || v.type === "analysis") v.type = "observation";
+  if (v.type === "risk" || v.type === "problem" || v.type === "alert" || v.type === "warning" || v.type === "failure") v.type = "issue";
+  if (v.type === "action" || v.type === "next_step" || v.type === "next_action" || v.type === "task") v.type = "recommendation";
+  if (v.type === "choice" || v.type === "management_decision" || v.type === "decision_point") v.type = "decision";
 
   if (v.confidence === "moderate") v.confidence = "medium";
   if (v.confidence === "certain") v.confidence = "high";
