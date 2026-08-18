@@ -3,8 +3,24 @@ import { callAgbaJson, AIGatewayError, aiConfigured } from "../_shared/ai.ts";
 
 const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type, idempotency-key","Access-Control-Allow-Methods":"POST, OPTIONS"};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
+
+function coerceReasoning(value:any){
+ const source=value&&typeof value==="object"&&!Array.isArray(value)?value:{};
+ const typeRaw=String(source.type??source.kind??source.category??"observation").trim().toLowerCase().replace(/[\s-]+/g,"_");
+ const type=["issue","risk","problem","alert","warning","failure","critical_issue","operational_issue"].includes(typeRaw)?"issue":["recommendation","action","next_step","next_action","task","action_item","suggestion","advice"].includes(typeRaw)?"recommendation":["decision","choice","management_decision","decision_point"].includes(typeRaw)?"decision":"observation";
+ const title=String(source.title??source.name??source.headline??source.subject??source.issue??source.summary??source.text??"Agba observation").trim().slice(0,500)||"Agba observation";
+ const summary=String(source.summary??source.message??source.text??source.content??source.description??source.details??source.insight??source.finding??source.analysis??title).trim()||title;
+ let confidence=String(source.confidence??"medium").trim().toLowerCase();
+ confidence=confidence==="moderate"?"medium":confidence==="certain"?"high":confidence==="uncertain"?"low":confidence;
+ if(!["high","medium","low"].includes(confidence))confidence="medium";
+ let severity:any=source.severity??null;
+ if(typeof severity==="string"){severity=severity.trim().toLowerCase();if(["null","none","n/a","na","unknown","unspecified",""].includes(severity))severity=null;else if(severity==="moderate")severity="medium";else if(["urgent","severe","extreme"].includes(severity))severity="high";}
+ if(![null,"low","medium","high","critical"].includes(severity))severity=null;
+ return {type,title,summary,confidence,confidence_reason:String(source.confidence_reason??source.confidence_explanation??source.reason??source.rationale??"Confidence is based on the supplied company evidence.").trim(),severity,severity_reason:String(source.severity_reason??source.severity_explanation??source.severity_rationale??"Severity is based on the supplied company evidence.").trim(),recommended_action:source.recommended_action??source.next_action??source.next_step??source.recommendation??source.action??null};
+}
+
 Deno.serve(async(req)=>{
- if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
+ if(req.method==="OPTIONS")return new Response("ok",{headers: corsHeaders});
  if(req.method!=="POST")return json({error:"method_not_allowed"},405);
  const supabaseUrl=Deno.env.get("SUPABASE_URL"),serviceRoleKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
  if(!supabaseUrl||!serviceRoleKey||!aiConfigured())return json({error:"server_configuration_error"},500);
@@ -23,8 +39,9 @@ Deno.serve(async(req)=>{
  try{const {data:state,error:stateError}=await admin.from("agba_state_items").select("id,department_id,kind,title,summary,status,confidence,severity,recommended_action,last_seen_at,source_reasoning_item_id,source_report_id").eq("organization_id",body.organization_id).in("status",["active","monitoring"]).order("last_seen_at",{ascending:false}).limit(30);if(stateError){memoryStatus="unavailable";}else{stateContext=(state??[]).map((s:any)=>`STATE ${s.id}\nkind=${s.kind}\ntitle=${s.title}\nsummary=${s.summary}\nstatus=${s.status}\nconfidence=${s.confidence}\nseverity=${s.severity??"null"}\nrecommended_action=${s.recommended_action??"null"}\nlast_seen_at=${s.last_seen_at}\nsource_report_id=${s.source_report_id??"null"}`).join("\n\n")||"No persistent state yet.";}}catch{memoryStatus="unavailable";}
  const question=body.question??"Identify the most important operational issue, explain confidence and severity, and recommend an action.";
  const prompt=`You are Agba, the operating brain of a company. Answer the CEO's question using BOTH persistent company state and supplied current evidence when available. Persistent state is durable memory accumulated from earlier reporting periods. Use it to identify changes, trends, interventions, unresolved issues, and relationships across time. Do not treat older state as automatically current: prefer newer evidence when facts conflict, and explicitly describe uncertainty or change. Never invent facts.\n\nCEO QUESTION:\n${question}\n\nPERSISTENT COMPANY STATE:\n${stateContext}\n\nCURRENT EVIDENCE:\n${reportContext}\n\nReturn ONLY valid JSON with exactly these fields: {"type":"observation|issue|recommendation|decision","title":"short title","summary":"concise evidence-grounded summary","confidence":"high|medium|low","confidence_reason":"why the evidence supports this confidence","severity":"low|medium|high|critical|null","severity_reason":"why this severity is justified","recommended_action":"specific practical action or null"}.`;
- let result;try{result=await callAgbaJson(prompt,(v:any)=>!!v?.type&&!!v?.title&&!!v?.summary&&!!v?.confidence_reason&&!!v?.severity_reason&&["observation","issue","recommendation","decision"].includes(v.type)&&["high","medium","low"].includes(v.confidence)&&[null,"low","medium","high","critical"].includes(v.severity));}catch(error){if(error instanceof AIGatewayError)return json({error:error.code,detail:{message:error.message,attempts:error.attempts}},502);return json({error:"ai_gateway_unavailable"},502);}
- const reasoning:any=result.value;const {data:item,error:itemError}=await admin.from("agba_reasoning_items").insert({organization_id:body.organization_id,department_id:body.department_id??null,type:reasoning.type,title:reasoning.title.trim(),summary:reasoning.summary.trim(),confidence:reasoning.confidence??"medium",severity:reasoning.severity??null,recommended_action:reasoning.recommended_action??null,created_by:actor.id}).select("*").single();
+ let result;try{result=await callAgbaJson(prompt,()=>true);}catch(error){if(error instanceof AIGatewayError)return json({error:error.code,detail:{message:error.message,attempts:error.attempts}},502);return json({error:"ai_gateway_unavailable"},502);}
+ const reasoning=coerceReasoning(result.value);
+ const {data:item,error:itemError}=await admin.from("agba_reasoning_items").insert({organization_id:body.organization_id,department_id:body.department_id??null,type:reasoning.type,title:reasoning.title,summary:reasoning.summary,confidence:reasoning.confidence,severity:reasoning.severity,recommended_action:reasoning.recommended_action,created_by:actor.id}).select("*").single();
  if(itemError||!item)return json({error:"reasoning_item_create_failed",detail:itemError?.message},400);
  const evidenceRows=body.evidence.map((e:any)=>({reasoning_item_id:item.id,report_id:e.report_id??null,report_entry_id:e.report_entry_id??null,observation_id:e.observation_id??null,issue_id:e.issue_id??null,decision_id:e.decision_id??null,evidence_note:e.evidence_note??null}));const {data:evidence,error:evidenceError}=await admin.from("agba_reasoning_evidence").insert(evidenceRows).select("*");
  if(evidenceError){await admin.from("agba_reasoning_items").delete().eq("id",item.id);return json({error:"evidence_create_failed",detail:evidenceError.message},400)}
