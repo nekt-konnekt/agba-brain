@@ -17,8 +17,10 @@ const read = async (r: Response) => { const text = await r.text(); try { return 
 const expect = async (label: string, r: Response, status: number) => { const body = await read(r); if (r.status !== status) throw new Error(`${label}: expected ${status}, got ${r.status}: ${JSON.stringify(body)}`); return body; };
 
 async function alibabaPreflight() {
-  const base = (Deno.env.get("DASHSCOPE_BASE_URL") ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/+$/, "");
-  const model = Deno.env.get("DASHSCOPE_MODEL") ?? "qwen3.7-plus";
+  const configuredBase = Deno.env.get("DASHSCOPE_BASE_URL")?.trim();
+  const base = (configuredBase || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").replace(/\/+$/, "");
+  const configuredModel = Deno.env.get("DASHSCOPE_MODEL")?.trim();
+  const model = configuredModel || "qwen-plus";
   const response = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${dashscopeKey}` },
