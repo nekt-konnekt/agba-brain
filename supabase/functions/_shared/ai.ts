@@ -20,12 +20,15 @@ export function aiConfigured(): boolean {
 }
 
 function parseJsonString(text: string): unknown {
-  const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try { return JSON.parse(cleaned); } catch {}
+
   const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
   if (fenced) {
     try { return JSON.parse(fenced.trim()); } catch {}
   }
+
   const firstObject = cleaned.indexOf("{");
   const lastObject = cleaned.lastIndexOf("}");
   if (firstObject >= 0 && lastObject > firstObject) {
@@ -40,7 +43,7 @@ function parseJsonString(text: string): unknown {
 }
 
 function parseJsonContent(payload: any): unknown {
-  const content = payload?.choices?.[0]?.message?.content;
+  const content = payload?.choices?.[0]?.message?.content ?? payload?.output ?? payload?.result;
   if (typeof content === "string") return parseJsonString(content);
   if (Array.isArray(content)) {
     const text = content
@@ -60,13 +63,10 @@ function normalizeModelJson(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
 
   const source = value as Record<string, unknown>;
-
-  // Qwen sometimes returns the requested object inside a semantic wrapper.
-  // Unwrap only when the wrapper itself does not already look like the Agba schema.
   const directSchemaKeys = ["type", "kind", "category", "classification", "finding_type", "title", "summary", "description", "details"];
   const hasDirectSchemaKey = directSchemaKeys.some((key) => source[key] != null);
   if (!hasDirectSchemaKey) {
-    for (const key of ["result", "output", "answer", "response", "reasoning", "observation", "finding", "data"]) {
+    for (const key of ["result", "output", "answer", "response", "reasoning", "observation", "finding", "data", "content"]) {
       const nested = source[key];
       if (nested && typeof nested === "object") return normalizeModelJson(nested);
       if (typeof nested === "string") {
@@ -113,8 +113,7 @@ function normalizeModelJson(value: unknown): unknown {
   if (v.confidence === "uncertain") v.confidence = "low";
   if (v.severity === "null" || v.severity === "none" || v.severity === "n/a" || v.severity === "") v.severity = null;
   if (v.severity === "moderate") v.severity = "medium";
-  if (v.severity === "urgent") v.severity = "high";
-  if (v.severity === "severe") v.severity = "high";
+  if (v.severity === "urgent" || v.severity === "severe") v.severity = "high";
 
   if (v.title == null && typeof v.summary === "string") v.title = v.summary.slice(0, 100);
   if (v.summary == null && typeof v.title === "string") v.summary = v.title;
@@ -126,13 +125,13 @@ function normalizeModelJson(value: unknown): unknown {
   for (const key of ["title", "summary", "confidence_reason", "severity_reason", "recommended_action"]) {
     if (typeof v[key] === "string") v[key] = v[key].trim();
   }
-
   return v;
 }
 
 async function callOpenAICompatible(params: {
   provider: string; apiKey: string; baseUrl: string; model: string; prompt: string;
   validator: Validator; fetchImpl: FetchLike; timeoutMs: number; attempts: Attempt[];
+  extraBody?: Record<string, unknown>;
 }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), params.timeoutMs);
@@ -144,9 +143,10 @@ async function callOpenAICompatible(params: {
         model: params.model,
         temperature: 0.1,
         response_format: { type: "json_object" },
+        ...(params.extraBody ?? {}),
         messages: [
-          { role: "system", content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences." },
-          { role: "user", content: `${params.prompt}\n\nReturn the answer as valid JSON.` },
+          { role: "system", content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return exactly one valid JSON object matching the requested schema. No markdown, no prose outside JSON, no <think> tags." },
+          { role: "user", content: `${params.prompt}\n\nReturn exactly one valid JSON object.` },
         ],
       }),
       signal: controller.signal,
@@ -177,6 +177,12 @@ async function callOpenAICompatible(params: {
   }
 }
 
+function configuredDashscopeModels(): string[] {
+  const configured = Deno.env.get("DASHSCOPE_MODELS")?.split(",").map((m) => m.trim()).filter(Boolean) ?? [];
+  const primary = Deno.env.get("DASHSCOPE_MODEL")?.trim() || "qwen3.7-flash";
+  return [...new Set(configured.length ? configured : [primary, "qwen3.7-flash", "qwen-plus"] )];
+}
+
 export async function callAgbaJson(prompt: string, validator: Validator, options: { fetchImpl?: FetchLike; timeoutMs?: number } = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? Number(Deno.env.get("AI_TIMEOUT_MS") ?? "45000");
@@ -184,14 +190,17 @@ export async function callAgbaJson(prompt: string, validator: Validator, options
 
   const dashscopeKey = Deno.env.get("DASHSCOPE_API_KEY");
   if (dashscopeKey) {
-    const result = await callOpenAICompatible({
-      provider: "alibaba",
-      apiKey: dashscopeKey,
-      baseUrl: Deno.env.get("DASHSCOPE_BASE_URL") || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-      model: Deno.env.get("DASHSCOPE_MODEL") || "qwen-plus",
-      prompt, validator, fetchImpl, timeoutMs, attempts,
-    });
-    if (result) return result;
+    for (const model of configuredDashscopeModels()) {
+      const result = await callOpenAICompatible({
+        provider: "alibaba",
+        apiKey: dashscopeKey,
+        baseUrl: Deno.env.get("DASHSCOPE_BASE_URL") || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        model,
+        prompt, validator, fetchImpl, timeoutMs, attempts,
+        extraBody: { enable_thinking: false },
+      });
+      if (result) return result;
+    }
   }
 
   const openAIKey = Deno.env.get("OPENAI_API_KEY");
