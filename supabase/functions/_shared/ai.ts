@@ -32,15 +32,24 @@ function normalizeModelJson(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const v = { ...(value as Record<string, unknown>) };
 
-  // Providers sometimes serialize JSON null as the literal string "null".
-  if (v.severity === "null" || v.severity === "NULL" || v.severity === "") v.severity = null;
-
-  // Keep enum fields stable when a provider returns different casing.
   for (const key of ["type", "confidence", "severity"]) {
     if (typeof v[key] === "string") v[key] = v[key].trim().toLowerCase();
   }
 
-  // Trim textual fields without changing their meaning.
+  // Alibaba/Qwen can use semantically equivalent labels outside our storage enums.
+  if (v.type === "insight" || v.type === "fact" || v.type === "finding") v.type = "observation";
+  if (v.type === "risk" || v.type === "problem" || v.type === "alert") v.type = "issue";
+  if (v.type === "action" || v.type === "next_step") v.type = "recommendation";
+  if (v.type === "choice" || v.type === "management_decision") v.type = "decision";
+
+  if (v.confidence === "moderate") v.confidence = "medium";
+  if (v.confidence === "certain") v.confidence = "high";
+  if (v.confidence === "uncertain") v.confidence = "low";
+
+  if (v.severity === "null" || v.severity === "none" || v.severity === "n/a" || v.severity === "") v.severity = null;
+  if (v.severity === "moderate") v.severity = "medium";
+  if (v.severity === "urgent") v.severity = "high";
+
   for (const key of ["title", "summary", "confidence_reason", "severity_reason", "recommended_action"]) {
     if (typeof v[key] === "string") v[key] = v[key].trim();
   }
