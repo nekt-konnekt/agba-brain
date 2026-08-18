@@ -1,18 +1,21 @@
 export const DEFAULT_PUTER_MODEL = "gpt-5.4-nano";
+export const DEFAULT_PUTER_FALLBACK_MODELS = ["gemini-3.1-flash-lite"];
 
 type Validator = (value: unknown) => boolean;
 type FetchLike = typeof fetch;
 
+type Attempt = { model: string; status?: number; reason: string };
+
 export class PuterAIError extends Error {
   status: number;
   code: string;
-  attempts: Array<{ model: string; status?: number; reason: string }>;
+  attempts: Attempt[];
 
   constructor(
     code: string,
     message: string,
     status = 502,
-    attempts: Array<{ model: string; status?: number; reason: string }> = [],
+    attempts: Attempt[] = [],
   ) {
     super(message);
     this.name = "PuterAIError";
@@ -28,6 +31,18 @@ export function puterConfigured(): boolean {
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+function configuredModels(explicitModel?: string): string[] {
+  const configured = Deno.env.get("PUTER_MODELS")
+    ?.split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+
+  if (configured?.length) return [...new Set(configured)];
+
+  const primary = explicitModel ?? Deno.env.get("PUTER_MODEL") ?? DEFAULT_PUTER_MODEL;
+  return [...new Set([primary, ...DEFAULT_PUTER_FALLBACK_MODELS])];
 }
 
 function extractJsonContent(payload: any): unknown {
@@ -46,6 +61,8 @@ function extractJsonContent(payload: any): unknown {
   }
 }
 
+const retryableStatus = (status: number) => status === 402 || status === 429 || status >= 500;
+
 export async function callPuterJson(
   prompt: string,
   validator: Validator,
@@ -62,78 +79,80 @@ export async function callPuterJson(
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 20000;
   const maxRetries = options.maxRetries ?? 1;
-  const model = options.model ?? Deno.env.get("PUTER_MODEL") ?? DEFAULT_PUTER_MODEL;
+  const models = configuredModels(options.model);
   const baseUrl = normalizeBaseUrl(
     Deno.env.get("PUTER_BASE_URL") ?? "https://api.puter.com/puterai/openai/v1",
   );
-  const attempts: Array<{ model: string; status?: number; reason: string }> = [];
+  const attempts: Attempt[] = [];
 
-  for (let retry = 0; retry <= maxRetries; retry++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetchImpl(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences.",
-            },
-            { role: "user", content: prompt },
-          ],
-        }),
-        signal: controller.signal,
-      });
+  for (const model of models) {
+    for (let retry = 0; retry <= maxRetries; retry++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetchImpl(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.1,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences.",
+              },
+              { role: "user", content: prompt },
+            ],
+          }),
+          signal: controller.signal,
+        });
 
-      const text = await response.text();
-      if (!response.ok) {
-        attempts.push({ model: `puter/${model}`, status: response.status, reason: `http_${response.status}` });
-        if (retry < maxRetries && response.status >= 500) {
+        const text = await response.text();
+        if (!response.ok) {
+          attempts.push({ model: `puter/${model}`, status: response.status, reason: `http_${response.status}` });
+          if (retry < maxRetries && retryableStatus(response.status)) {
+            await new Promise((resolve) => setTimeout(resolve, 250 * (retry + 1)));
+            continue;
+          }
+          break;
+        }
+
+        let payload: any;
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          attempts.push({ model: `puter/${model}`, reason: "invalid_provider_response_json" });
+          break;
+        }
+
+        const value = extractJsonContent(payload);
+        if (!validator(value)) {
+          attempts.push({ model: `puter/${model}`, reason: "invalid_model_json" });
+          break;
+        }
+
+        return {
+          value,
+          payload,
+          model: payload?.model ?? model,
+          provider: "puter",
+          attempts,
+        };
+      } catch (error) {
+        const timedOut = error instanceof DOMException && error.name === "AbortError";
+        attempts.push({ model: `puter/${model}`, reason: timedOut ? "timeout" : "network_error" });
+        if (retry < maxRetries) {
           await new Promise((resolve) => setTimeout(resolve, 250 * (retry + 1)));
           continue;
         }
         break;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      let payload: any;
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        attempts.push({ model: `puter/${model}`, reason: "invalid_provider_response_json" });
-        break;
-      }
-
-      const value = extractJsonContent(payload);
-      if (!validator(value)) {
-        attempts.push({ model: `puter/${model}`, reason: "invalid_model_json" });
-        break;
-      }
-
-      return {
-        value,
-        payload,
-        model: payload?.model ?? model,
-        provider: "puter",
-        attempts,
-      };
-    } catch (error) {
-      const timedOut = error instanceof DOMException && error.name === "AbortError";
-      attempts.push({ model: `puter/${model}`, reason: timedOut ? "timeout" : "network_error" });
-      if (retry < maxRetries) {
-        await new Promise((resolve) => setTimeout(resolve, 250 * (retry + 1)));
-        continue;
-      }
-      break;
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
