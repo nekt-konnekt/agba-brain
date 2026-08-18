@@ -1,4 +1,4 @@
-export const DEFAULT_PUTER_MODEL = "gpt-5.4-nano";
+export const DEFAULT_PUTER_MODEL = "qwen/qwen3.7-flash";
 
 type Validator = (value: unknown) => boolean;
 type FetchLike = typeof fetch;
