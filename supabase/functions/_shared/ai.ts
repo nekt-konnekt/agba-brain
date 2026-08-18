@@ -22,18 +22,15 @@ export function aiConfigured(): boolean {
 function parseJsonString(text: string): unknown {
   const cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   try { return JSON.parse(cleaned); } catch {}
-
   const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
   if (fenced) {
     try { return JSON.parse(fenced.trim()); } catch {}
   }
-
   const firstObject = cleaned.indexOf("{");
   const lastObject = cleaned.lastIndexOf("}");
   if (firstObject >= 0 && lastObject > firstObject) {
     try { return JSON.parse(cleaned.slice(firstObject, lastObject + 1)); } catch {}
   }
-
   const firstArray = cleaned.indexOf("[");
   const lastArray = cleaned.lastIndexOf("]");
   if (firstArray >= 0 && lastArray > firstArray) {
@@ -62,8 +59,24 @@ function normalizeModelJson(value: unknown): unknown {
   }
   if (!value || typeof value !== "object") return value;
 
-  const v = { ...(value as Record<string, unknown>) };
+  const source = value as Record<string, unknown>;
 
+  // Qwen sometimes returns the requested object inside a semantic wrapper.
+  // Unwrap only when the wrapper itself does not already look like the Agba schema.
+  const directSchemaKeys = ["type", "kind", "category", "classification", "finding_type", "title", "summary", "description", "details"];
+  const hasDirectSchemaKey = directSchemaKeys.some((key) => source[key] != null);
+  if (!hasDirectSchemaKey) {
+    for (const key of ["result", "output", "answer", "response", "reasoning", "observation", "finding", "data"]) {
+      const nested = source[key];
+      if (nested && typeof nested === "object") return normalizeModelJson(nested);
+      if (typeof nested === "string") {
+        const parsed = parseJsonString(nested);
+        if (parsed && typeof parsed === "object") return normalizeModelJson(parsed);
+      }
+    }
+  }
+
+  const v = { ...source };
   const aliases: Record<string, string> = {
     kind: "type",
     category: "type",
@@ -71,7 +84,7 @@ function normalizeModelJson(value: unknown): unknown {
     finding_type: "type",
     description: "summary",
     details: "summary",
-    explanation: "summary",
+    explanation: "confidence_reason",
     reason: "confidence_reason",
     rationale: "confidence_reason",
     confidence_explanation: "confidence_reason",
@@ -98,10 +111,10 @@ function normalizeModelJson(value: unknown): unknown {
   if (v.confidence === "moderate") v.confidence = "medium";
   if (v.confidence === "certain") v.confidence = "high";
   if (v.confidence === "uncertain") v.confidence = "low";
-
   if (v.severity === "null" || v.severity === "none" || v.severity === "n/a" || v.severity === "") v.severity = null;
   if (v.severity === "moderate") v.severity = "medium";
   if (v.severity === "urgent") v.severity = "high";
+  if (v.severity === "severe") v.severity = "high";
 
   if (v.title == null && typeof v.summary === "string") v.title = v.summary.slice(0, 100);
   if (v.summary == null && typeof v.title === "string") v.summary = v.title;
@@ -151,7 +164,8 @@ async function callOpenAICompatible(params: {
     const parsed = parseJsonContent(payload);
     const value = normalizeModelJson(parsed);
     if (!params.validator(value)) {
-      params.attempts.push({ provider: params.provider, model: params.model, reason: "invalid_model_json" });
+      const keys = value && typeof value === "object" ? Object.keys(value as Record<string, unknown>).slice(0, 12).join(",") : typeof value;
+      params.attempts.push({ provider: params.provider, model: params.model, reason: `invalid_model_json:${keys}` });
       return null;
     }
     return { value, payload, model: payload?.model ?? params.model, provider: params.provider, attempts: params.attempts };
