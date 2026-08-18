@@ -1,0 +1,115 @@
+import { callPuterJson, puterConfigured } from "./puter.ts";
+
+type Validator = (value: unknown) => boolean;
+type FetchLike = typeof fetch;
+type Attempt = { provider: string; model: string; status?: number; reason: string };
+
+export class AIGatewayError extends Error {
+  code: string;
+  attempts: Attempt[];
+  constructor(code: string, message: string, attempts: Attempt[] = []) {
+    super(message);
+    this.name = "AIGatewayError";
+    this.code = code;
+    this.attempts = attempts;
+  }
+}
+
+export function aiConfigured(): boolean {
+  return !!Deno.env.get("DASHSCOPE_API_KEY") || !!Deno.env.get("OPENAI_API_KEY") || puterConfigured();
+}
+
+function parseJsonContent(payload: any): unknown {
+  const content = payload?.choices?.[0]?.message?.content;
+  if (typeof content !== "string") return content;
+  try { return JSON.parse(content); } catch {}
+  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)?.[1];
+  if (!fenced) return undefined;
+  try { return JSON.parse(fenced); } catch { return undefined; }
+}
+
+async function callOpenAICompatible(params: {
+  provider: string; apiKey: string; baseUrl: string; model: string; prompt: string;
+  validator: Validator; fetchImpl: FetchLike; timeoutMs: number; attempts: Attempt[];
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), params.timeoutMs);
+  try {
+    const response = await params.fetchImpl(`${params.baseUrl.replace(/\/+$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.apiKey}` },
+      body: JSON.stringify({
+        model: params.model,
+        temperature: 0.1,
+        messages: [
+          { role: "system", content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences." },
+          { role: "user", content: params.prompt },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      params.attempts.push({ provider: params.provider, model: params.model, status: response.status, reason: `http_${response.status}` });
+      return null;
+    }
+    let payload: any;
+    try { payload = JSON.parse(text); } catch {
+      params.attempts.push({ provider: params.provider, model: params.model, reason: "invalid_provider_response_json" });
+      return null;
+    }
+    const value = parseJsonContent(payload);
+    if (!params.validator(value)) {
+      params.attempts.push({ provider: params.provider, model: params.model, reason: "invalid_model_json" });
+      return null;
+    }
+    return { value, payload, model: payload?.model ?? params.model, provider: params.provider, attempts: params.attempts };
+  } catch (error) {
+    params.attempts.push({ provider: params.provider, model: params.model, reason: error instanceof DOMException && error.name === "AbortError" ? "timeout" : "network_error" });
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function callAgbaJson(prompt: string, validator: Validator, options: { fetchImpl?: FetchLike; timeoutMs?: number } = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const timeoutMs = options.timeoutMs ?? 20000;
+  const attempts: Attempt[] = [];
+
+  const dashscopeKey = Deno.env.get("DASHSCOPE_API_KEY");
+  if (dashscopeKey) {
+    const result = await callOpenAICompatible({
+      provider: "alibaba",
+      apiKey: dashscopeKey,
+      baseUrl: Deno.env.get("DASHSCOPE_BASE_URL") ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      model: Deno.env.get("DASHSCOPE_MODEL") ?? "qwen3.7-plus",
+      prompt, validator, fetchImpl, timeoutMs, attempts,
+    });
+    if (result) return result;
+  }
+
+  const openAIKey = Deno.env.get("OPENAI_API_KEY");
+  if (openAIKey) {
+    const result = await callOpenAICompatible({
+      provider: "openai",
+      apiKey: openAIKey,
+      baseUrl: Deno.env.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.4-nano",
+      prompt, validator, fetchImpl, timeoutMs, attempts,
+    });
+    if (result) return result;
+  }
+
+  if (puterConfigured()) {
+    try {
+      const result = await callPuterJson(prompt, validator, { fetchImpl, timeoutMs });
+      return result;
+    } catch (error) {
+      const puterError = error as { attempts?: Attempt[] };
+      if (Array.isArray(puterError.attempts)) attempts.push(...puterError.attempts.map((a) => ({ provider: "puter", ...a })));
+    }
+  }
+
+  throw new AIGatewayError("ai_gateway_unavailable", "No configured AI provider returned valid Agba output", attempts);
+}
