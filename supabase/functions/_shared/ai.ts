@@ -41,9 +41,10 @@ async function callOpenAICompatible(params: {
       body: JSON.stringify({
         model: params.model,
         temperature: 0.1,
+        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences." },
-          { role: "user", content: params.prompt },
+          { role: "user", content: `${params.prompt}\n\nReturn the answer as valid JSON.` },
         ],
       }),
       signal: controller.signal,
@@ -74,7 +75,7 @@ async function callOpenAICompatible(params: {
 
 export async function callAgbaJson(prompt: string, validator: Validator, options: { fetchImpl?: FetchLike; timeoutMs?: number } = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 20000;
+  const timeoutMs = options.timeoutMs ?? Number(Deno.env.get("AI_TIMEOUT_MS") ?? "45000");
   const attempts: Attempt[] = [];
 
   const dashscopeKey = Deno.env.get("DASHSCOPE_API_KEY");
@@ -82,8 +83,8 @@ export async function callAgbaJson(prompt: string, validator: Validator, options
     const result = await callOpenAICompatible({
       provider: "alibaba",
       apiKey: dashscopeKey,
-      baseUrl: Deno.env.get("DASHSCOPE_BASE_URL") ?? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-      model: Deno.env.get("DASHSCOPE_MODEL") ?? "qwen3.7-plus",
+      baseUrl: Deno.env.get("DASHSCOPE_BASE_URL") || "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      model: Deno.env.get("DASHSCOPE_MODEL") || "qwen-plus",
       prompt, validator, fetchImpl, timeoutMs, attempts,
     });
     if (result) return result;
@@ -94,8 +95,8 @@ export async function callAgbaJson(prompt: string, validator: Validator, options
     const result = await callOpenAICompatible({
       provider: "openai",
       apiKey: openAIKey,
-      baseUrl: Deno.env.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
-      model: Deno.env.get("OPENAI_MODEL") ?? "gpt-5.4-nano",
+      baseUrl: Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1",
+      model: Deno.env.get("OPENAI_MODEL") || "gpt-5.4-nano",
       prompt, validator, fetchImpl, timeoutMs, attempts,
     });
     if (result) return result;
