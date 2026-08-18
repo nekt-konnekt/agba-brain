@@ -16,7 +16,23 @@ const cleanup = async () => { if (organizationId) await admin.from("agba_organiz
 const read = async (r: Response) => { const text = await r.text(); try { return JSON.parse(text); } catch { return { raw: text }; } };
 const expect = async (label: string, r: Response, status: number) => { const body = await read(r); if (r.status !== status) throw new Error(`${label}: expected ${status}, got ${r.status}: ${JSON.stringify(body)}`); return body; };
 
+async function puterPreflight() {
+  const base = (Deno.env.get("PUTER_BASE_URL") ?? "https://api.puter.com/puterai/openai/v1").replace(/\/+$/, "");
+  const models = [Deno.env.get("PUTER_MODEL") ?? "gpt-5.4-nano", "gemini-3.1-flash-lite"];
+  for (const model of models) {
+    const response = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${puterToken}` },
+      body: JSON.stringify({ model, temperature: 0, messages: [{ role: "user", content: "Reply with OK" }] }),
+    });
+    const body = await read(response);
+    console.log(`PUTER PREFLIGHT ${model}: HTTP ${response.status} ${JSON.stringify(body)}`);
+  }
+}
+
 try {
+  await puterPreflight();
+
   const supabase = createClient(url, anon);
   const { data: auth, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
   if (signInError || !auth.session) throw new Error(`Auth failed: ${signInError?.message ?? "no session"}`);
