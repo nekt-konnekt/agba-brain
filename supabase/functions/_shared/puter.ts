@@ -37,11 +37,14 @@ function configuredModels(explicitModel?: string): string[] {
   const configured = Deno.env.get("PUTER_MODELS")
     ?.split(",")
     .map((model) => model.trim())
-    .filter(Boolean);
-
-  if (configured?.length) return [...new Set(configured)];
+    .filter(Boolean) ?? [];
 
   const primary = explicitModel ?? Deno.env.get("PUTER_MODEL") ?? DEFAULT_PUTER_MODEL;
+
+  // PUTER_MODEL is a preferred model, not a single point of failure.
+  // Always retain the built-in fallback chain unless explicitly supplied
+  // through PUTER_MODELS, in which case that list is authoritative.
+  if (configured.length) return [...new Set(configured)];
   return [...new Set([primary, ...DEFAULT_PUTER_FALLBACK_MODELS])];
 }
 
