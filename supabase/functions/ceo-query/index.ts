@@ -44,6 +44,9 @@ function questionMatchesAction(question:string,description:string){
   let overlap=0;for(const token of q)if(a.has(token))overlap++;
   return overlap>=1 && overlap/Math.min(q.size,a.size)>=0.34;
 }
+function isManagementQuestion(question:string){
+  return /\b(what should i do|what do i do|what should we do|what needs my attention|what should i|how should i|how do we|what action|what needs to be done|what do you recommend|recommend|priorit|respond|handle|address|fix|resolve|collect|follow up|follow-up)\b/i.test(question);
+}
 
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
@@ -80,8 +83,20 @@ Deno.serve(async(req)=>{
   if(queryError||!query)return json({error:"ceo_query_persist_failed",detail:queryError?.message},400);
 
   let workingActions=[...(openActions??[])];
-  const persistedActions:any[]=[];
-  for(const action of answer.actions){
+  let managementActions=[...answer.actions];
+  if(!managementActions.length && isManagementQuestion(question)){
+    const evidenceActions=(state??[])
+      .filter((s:any)=>String(s.recommended_action??"").trim())
+      .sort((a:any,b:any)=>{
+        const severity=priorityRank(String(b.severity??"medium").toLowerCase())-priorityRank(String(a.severity??"medium").toLowerCase());
+        if(severity!==0)return severity;
+        return String(b.last_seen_at??"").localeCompare(String(a.last_seen_at??""));
+      })
+      .map((s:any)=>({description:String(s.recommended_action).trim().slice(0,1000),owner_name:null,deadline:null,priority:["critical","high","medium","low"].includes(String(s.severity??"").toLowerCase())?String(s.severity).toLowerCase():"medium"}));
+    managementActions=evidenceActions.slice(0,3);
+  }
+
+  for(const action of managementActions){
     const matches=workingActions.filter((existing:any)=>isDuplicateAction(action.description,existing.description));
     if(matches.length){
       const primary=matches[0];
@@ -91,6 +106,7 @@ Deno.serve(async(req)=>{
       if(action.deadline&&!primary.deadline)updates.deadline=action.deadline;
       const {data:updated,error:updateError}=await admin.from("agba_actions").update(updates).eq("id",primary.id).select("*").single();
       if(updateError)return json({error:"action_update_failed",detail:updateError.message},400);
+      workingActions=workingActions.map((item:any)=>item.id===primary.id?updated:item);
       persistedActions.push(updated);
       for(const duplicate of matches.slice(1))await admin.from("agba_actions").update({status:"cancelled",metadata:{...(duplicate.metadata??{}),duplicate_of:primary.id,closed_by_deduplication_query_id:query.id}}).eq("id",duplicate.id);
     }else{
