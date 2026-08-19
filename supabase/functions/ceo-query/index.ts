@@ -89,7 +89,7 @@ Deno.serve(async(req)=>{
     const relevantExisting=workingActions.filter((a:any)=>questionMatchesAction(question,a.description));
     for(const action of relevantExisting){
       await admin.from("agba_actions").update({source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}}).eq("id",action.id);
-      persistedActions.push({...action,source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id});
+      persistedActions.push({...action,source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}});
     }
   }
   await admin.from("agba_audit_logs").insert({action:"ceo.query",entity_id:query.id,organization_id:body.organization_id,actor_agba_user_id:actor.id});
