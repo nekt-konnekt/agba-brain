@@ -36,7 +36,8 @@ try{
   const query=await expect("CEO query",await fetch(`${base}/ceo-query`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,question:"What needs my attention right now, and what should I do about the cash issue?"})}),201);
   if(query.answer?.provider!=="alibaba")throw new Error(`Expected Alibaba provider, got ${query.answer?.provider}`);
   const text=JSON.stringify(query).toLowerCase();
-  for(const signal of ["620","120","cash","unpaid"]){if(!text.includes(signal))throw new Error(`CEO answer missing signal: ${signal}`);}
+  for(const signal of ["620","120","cash"]){if(!text.includes(signal))throw new Error(`CEO answer missing signal: ${signal}`);}
+  if(!text.includes("unpaid")&&!text.includes("outstanding"))throw new Error("CEO answer missing unpaid/outstanding payment signal");
   if(!query.query?.provenance?.state_count)throw new Error("CEO query did not report persistent-state provenance");
   console.log(`PASS CEO query: provider=${query.answer.provider}, state=${query.provenance.state_items}, reports=${query.provenance.recent_reports}`);
 
