@@ -61,7 +61,7 @@ try{
   if(repeat.actions.some((a:any)=>!firstActions.data?.some((existing:any)=>existing.id===a.id)))throw new Error("Repeat CEO query returned a new action instead of reusing the existing action");
   console.log(`PASS action deduplication: ${(secondActions.data??[]).length} open action(s) after repeated management query`);
 
-  const {data:completedAction,error:completedActionError}=await admin.from("agba_actions").insert({organization_id:organizationId,created_by:actorIdForTest(admin,created.user.id),description:"Contact supplier about the previous material delay affecting two existing orders",owner_name:"Chinedu",status:"open",priority:"high",metadata:{created_from:"e2e-completed-history"}}).select("id").single();
+  const {data:completedAction,error:completedActionError}=await admin.from("agba_actions").insert({organization_id:organizationId,description:"Contact supplier about the previous material delay affecting two existing orders",owner_name:"Chinedu",status:"open",priority:"high",metadata:{created_from:"e2e-completed-history"}}).select("id").single();
   if(completedActionError||!completedAction)throw new Error(`Completed-action fixture creation failed: ${completedActionError?.message??"no action"}`);
   const completedAt=new Date().toISOString();
   const {error:completeError}=await admin.from("agba_actions").update({status:"done",metadata:{created_from:"e2e-completed-history",completed_at:completedAt}}).eq("id",completedAction.id);
@@ -91,5 +91,3 @@ try{
   console.log(`PASS incident isolation: new action ${newAction.id} created; completed action ${completedAction.id} remained historical`);
   console.log("AGBA CEO QUERY + ACTION MEMORY E2E PASS");
 }finally{await cleanup();}
-
-function actorIdForTest(adminClient:any,userId:string){return userId;}
