@@ -20,12 +20,12 @@ function coerce(value:any){
 }
 
 const STOP_WORDS=new Set(["a","an","and","at","by","for","from","get","in","into","is","it","of","on","or","our","the","this","to","up","with","we","you","your","now","today","immediately","current","currently","please","should","what","do","about","my","me","need","needs","right","can","could"]);
-const ACTION_SYNONYMS:[RegExp,string][]=[[/\b(delaying|delayed|delay)\b/g,"delay"],[/\b(materials?|items?|supplies?)\b/g,"material"],[/\b(schedule|timeline|delivery date)\b/g,"delivery"],[/\b(contact|call|reach out to|speak to)\b/g,"contact"],[/\b(expedite|expedited|expediting|rush)\b/g,"expedite"],[/\b(shipment|ship|shipping)\b/g,"shipment"],[/\b(unpaid|outstanding|receivable|receivables|invoice|invoices|payment|payments|collect|collection)\b/g,"cash"]];
+const ACTION_SYNONYMS:[RegExp,string][]=[[/\b(delaying|delayed|delay)\b/g,"delay"],[/\b(materials?|items?|supplies?)\b/g,"material"],[/\b(schedule|timeline|delivery date)\b/g,"delivery"],[/\b(contact|call|reach out to|speak to)\b/g,"contact"],[/\b(expedite|expedited|expediting|rush)\b/g,"expedite"],[/\b(shipment|ship|shipping)\b/g,"shipment"],[/\b(unpaid|outstanding|receivable|receivables|invoice|invoices|payment|payments|collect|collection)\b/g,"cash"],[/\b(supplier|vendor)\b/g,"supplier"]];
 function normalizeAction(description:string){let text=description.toLowerCase();for(const [pattern,replacement] of ACTION_SYNONYMS)text=text.replace(pattern,replacement);return [...new Set(text.replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter((word)=>word&&word.length>2&&!STOP_WORDS.has(word)))].sort();}
 function actionSimilarity(a:string,b:string){const aa=new Set(normalizeAction(a)),bb=new Set(normalizeAction(b));if(!aa.size||!bb.size)return 0;let intersection=0;for(const token of aa)if(bb.has(token))intersection++;return intersection/(aa.size+bb.size-intersection);}
 function isDuplicateAction(a:string,b:string){const similarity=actionSimilarity(a,b);const aa=normalizeAction(a).join(" "),bb=normalizeAction(b).join(" ");return similarity>=0.72||aa.includes(bb)||bb.includes(aa);}
 function priorityRank(value:string){return ({low:1,medium:2,high:3,critical:4} as Record<string,number>)[value]??2;}
-function questionMatchesAction(question:string,description:string){const q=new Set(normalizeAction(question)),a=new Set(normalizeAction(description));if(!q.size||!a.size)return false;let overlap=0;for(const token of q)if(a.has(token))overlap++;return overlap>=1&&overlap/Math.min(q.size,a.size)>=0.34;}
+function questionMatchesAction(question:string,description:string){const q=new Set(normalizeAction(question)),a=new Set(normalizeAction(description));if(!q.size||!a.size)return false;let overlap=0;for(const token of q)if(a.has(token))overlap++;return overlap>=2||overlap/Math.min(q.size,a.size)>=0.6;}
 function isManagementQuestion(question:string){return /\b(what should i do|what do i do|what should we do|what needs my attention|what should i|how should i|how do we|what action|what needs to be done|what do you recommend|recommend|priorit|respond|handle|address|fix|resolve|collect|follow up|follow-up)\b/i.test(question);}
 
 Deno.serve(async(req)=>{
@@ -65,7 +65,9 @@ Deno.serve(async(req)=>{
     managementActions=evidenceActions.slice(0,3);
   }
   for(const action of managementActions){
-    const matches=workingActions.filter((existing:any)=>isDuplicateAction(action.description,existing.description));
+    const exactOrSemanticMatches=workingActions.filter((existing:any)=>isDuplicateAction(action.description,existing.description));
+    const questionMatches=workingActions.filter((existing:any)=>questionMatchesAction(question,existing.description));
+    const matches=exactOrSemanticMatches.length?exactOrSemanticMatches:questionMatches;
     if(matches.length){
       const primary=matches[0];
       const mergedPriority=priorityRank(action.priority)>priorityRank(primary.priority)?action.priority:primary.priority;
@@ -87,7 +89,7 @@ Deno.serve(async(req)=>{
     const relevantExisting=workingActions.filter((a:any)=>questionMatchesAction(question,a.description));
     for(const action of relevantExisting){
       await admin.from("agba_actions").update({source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}}).eq("id",action.id);
-      persistedActions.push({...action,source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}});
+      persistedActions.push({...action,source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id});
     }
   }
   await admin.from("agba_audit_logs").insert({action:"ceo.query",entity_id:query.id,organization_id:body.organization_id,actor_agba_user_id:actor.id});
