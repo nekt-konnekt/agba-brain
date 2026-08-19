@@ -1,3 +1,4 @@
+import "https://esm.sh/@supabase/supabase-js@2";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAgbaJson, AIGatewayError, aiConfigured } from "../_shared/ai.ts";
 
@@ -19,8 +20,8 @@ function coerce(value:any){
   return {answer:String(source.answer??source.response??source.summary??source.message??source.text??"Agba could not produce an answer from the available evidence.").trim(),confidence,confidence_reason:String(source.confidence_reason??source.reason??source.rationale??"Confidence is based on the available company state and report evidence.").trim(),signals,actions};
 }
 
-const STOP_WORDS=new Set(["a","an","and","at","by","for","from","get","in","into","is","it","of","on","or","our","the","this","to","up","with","we","you","your","now","today","immediately","current","currently","please","should"]);
-const ACTION_SYNONYMS:[RegExp,string][]=[[/\b(delaying|delayed|delay)\b/g,"delay"],[/\b(materials?|items?|supplies?)\b/g,"material"],[/\b(schedule|timeline|delivery date)\b/g,"delivery"],[/\b(contact|call|reach out to|speak to)\b/g,"contact"],[/\b(expedite|expedited|expediting|rush)\b/g,"expedite"],[/\b(shipment|ship|shipping)\b/g,"shipment"]];
+const STOP_WORDS=new Set(["a","an","and","at","by","for","from","get","in","into","is","it","of","on","or","our","the","this","to","up","with","we","you","your","now","today","immediately","current","currently","please","should","what","do","about","my","me","need","needs","right","can","could"]);
+const ACTION_SYNONYMS:[RegExp,string][]=[[/\b(delaying|delayed|delay)\b/g,"delay"],[/\b(materials?|items?|supplies?)\b/g,"material"],[/\b(schedule|timeline|delivery date)\b/g,"delivery"],[/\b(contact|call|reach out to|speak to)\b/g,"contact"],[/\b(expedite|expedited|expediting|rush)\b/g,"expedite"],[/\b(shipment|ship|shipping)\b/g,"shipment"],[/\b(unpaid|outstanding|receivable|receivables|invoice|invoices|payment|payments|collect|collection)\b/g,"cash"]];
 function normalizeAction(description:string){
   let text=description.toLowerCase();
   for(const [pattern,replacement] of ACTION_SYNONYMS)text=text.replace(pattern,replacement);
@@ -38,6 +39,12 @@ function isDuplicateAction(a:string,b:string){
   return similarity>=0.72||aa.includes(bb)||bb.includes(aa);
 }
 function priorityRank(value:string){return ({low:1,medium:2,high:3,critical:4} as Record<string,number>)[value]??2;}
+function questionMatchesAction(question:string,description:string){
+  const q=new Set(normalizeAction(question)),a=new Set(normalizeAction(description));
+  if(!q.size||!a.size)return false;
+  let overlap=0;for(const token of q)if(a.has(token))overlap++;
+  return overlap>=1 && overlap/Math.min(q.size,a.size)>=0.34;
+}
 
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
@@ -86,13 +93,19 @@ Deno.serve(async(req)=>{
       const {data:updated,error:updateError}=await admin.from("agba_actions").update(updates).eq("id",primary.id).select("*").single();
       if(updateError)return json({error:"action_update_failed",detail:updateError.message},400);
       persistedActions.push(updated);
-      for(const duplicate of matches.slice(1)){
-        await admin.from("agba_actions").update({status:"cancelled",metadata:{...(duplicate.metadata??{}),duplicate_of:primary.id,closed_by_deduplication_query_id:query.id}}).eq("id",duplicate.id);
-      }
+      for(const duplicate of matches.slice(1))await admin.from("agba_actions").update({status:"cancelled",metadata:{...(duplicate.metadata??{}),duplicate_of:primary.id,closed_by_deduplication_query_id:query.id}}).eq("id",duplicate.id);
     }else{
       const {data:created,error:createError}=await admin.from("agba_actions").insert({organization_id:body.organization_id,created_by:actor.id,owner_name:action.owner_name,description:action.description,deadline:action.deadline,status:"open",priority:action.priority,source_ceo_query_id:query.id,metadata:{created_from:"ceo-query",action_intent:normalizeAction(action.description)}}).select("*").single();
       if(createError)return json({error:"action_persist_failed",detail:createError.message},400);
       persistedActions.push(created);workingActions.push(created);
+    }
+  }
+
+  if(!persistedActions.length){
+    const relevantExisting=workingActions.filter((a:any)=>questionMatchesAction(question,a.description));
+    for(const action of relevantExisting){
+      await admin.from("agba_actions").update({source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}}).eq("id",action.id);
+      persistedActions.push({...action,source_ceo_query_id:query.id,metadata:{...(action.metadata??{}),last_reaffirmed_by_ceo_query_id:query.id}});
     }
   }
 
