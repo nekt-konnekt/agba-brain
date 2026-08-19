@@ -60,5 +60,36 @@ try{
   if(!(repeat.actions??[]).length)throw new Error("Repeat CEO query did not resolve to an existing management action");
   if(repeat.actions.some((a:any)=>!firstActions.data?.some((existing:any)=>existing.id===a.id)))throw new Error("Repeat CEO query returned a new action instead of reusing the existing action");
   console.log(`PASS action deduplication: ${(secondActions.data??[]).length} open action(s) after repeated management query`);
+
+  const {data:completedAction,error:completedActionError}=await admin.from("agba_actions").insert({organization_id:organizationId,created_by:actorIdForTest(admin,created.user.id),description:"Contact supplier about the previous material delay affecting two existing orders",owner_name:"Chinedu",status:"open",priority:"high",metadata:{created_from:"e2e-completed-history"}}).select("id").single();
+  if(completedActionError||!completedAction)throw new Error(`Completed-action fixture creation failed: ${completedActionError?.message??"no action"}`);
+  const completedAt=new Date().toISOString();
+  const {error:completeError}=await admin.from("agba_actions").update({status:"done",metadata:{created_from:"e2e-completed-history",completed_at:completedAt}}).eq("id",completedAction.id);
+  if(completeError)throw new Error(`Completed-action fixture completion failed: ${completeError.message}`);
+  const {data:completedMemory,error:memoryError}=await admin.from("agba_state_items").select("id,metadata").eq("organization_id",organizationId).eq("state_key",`completed_action:${completedAction.id}`).maybeSingle();
+  if(memoryError||!completedMemory)throw new Error(`Completed-action memory fixture missing: ${memoryError?.message??"no state item"}`);
+  console.log("PASS completed action fixture persisted as historical memory");
+
+  const newReport=await expect("new incident report",await fetch(`${base}/report-ingestion`,{method:"POST",headers:{...headers,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({department_id:departments.sales,source:"agba-ceo-query-new-incident-e2e",report_text:"A new customer wants 50 branded shirts delivered in 3 days. Production reports the required fabric is currently out of stock. This is a new order and is not the same as the previously completed supplier-delay incident."})}),201);
+  const newReasoning=await expect("new incident reasoning",await fetch(`${base}/agba-reasoning`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,question:"Identify the current operational blocker for the new 50-shirt order and preserve its distinct context.",evidence:[{report_id:newReport.report.id}]})}),201);
+  await expect("new incident state",await fetch(`${base}/company-state-v2`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,reasoning_item_id:newReasoning.item.id})}),201);
+  console.log("PASS new incident -> reasoning -> persistent state");
+
+  const beforeNewIncident=await admin.from("agba_actions").select("id,description,status").eq("organization_id",organizationId).in("status",["open","in_progress"]);
+  if(beforeNewIncident.error)throw new Error(`New-incident baseline action lookup failed: ${beforeNewIncident.error.message}`);
+  const newIncidentQuery=await expect("new incident CEO query",await fetch(`${base}/ceo-query`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,question:"What should we do about the new 50 branded shirt order that must be delivered in 3 days but has no fabric available?"})}),201);
+  const afterNewIncident=await admin.from("agba_actions").select("id,description,status,source_ceo_query_id").eq("organization_id",organizationId).in("status",["open","in_progress"]);
+  if(afterNewIncident.error)throw new Error(`New-incident action lookup failed: ${afterNewIncident.error.message}`);
+  const beforeCount=(beforeNewIncident.data??[]).length;
+  const afterCount=(afterNewIncident.data??[]).length;
+  if(afterCount!==beforeCount+1)throw new Error(`Completed historical action incorrectly covered new incident: expected ${beforeCount+1} open actions, got ${afterCount}`);
+  if((newIncidentQuery.actions??[]).some((a:any)=>a.id===completedAction.id))throw new Error("New incident CEO query reused the completed historical action");
+  const newAction=(afterNewIncident.data??[]).find((a:any)=>!(beforeNewIncident.data??[]).some((old:any)=>old.id===a.id));
+  if(!newAction)throw new Error("New incident did not create a new management action");
+  const newActionText=String(newAction.description).toLowerCase();
+  if(!newActionText.includes("fabric")&&!newActionText.includes("shirt")&&!newActionText.includes("order"))throw new Error(`New action does not describe the new incident: ${newAction.description}`);
+  console.log(`PASS incident isolation: new action ${newAction.id} created; completed action ${completedAction.id} remained historical`);
   console.log("AGBA CEO QUERY + ACTION MEMORY E2E PASS");
 }finally{await cleanup();}
+
+function actorIdForTest(adminClient:any,userId:string){return userId;}
