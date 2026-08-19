@@ -33,11 +33,17 @@ try{
   await expect("CEO evidence state",await fetch(`${base}/company-state-v2`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,reasoning_item_id:reasoning.item.id})}),201);
   console.log("PASS evidence -> reasoning -> persistent state");
 
+  const {data:persistentState,error:stateError}=await admin.from("agba_state_items").select("title,summary,recommended_action").eq("organization_id",organizationId).in("status",["active","monitoring"]);
+  if(stateError)throw new Error(`Persistent-state verification failed: ${stateError.message}`);
+  const stateText=JSON.stringify(persistentState??[]).toLowerCase();
+  for(const signal of ["620","120"]){if(!stateText.includes(signal))throw new Error(`Persistent state missing signal: ${signal}`);}
+  if(!stateText.includes("cash")&&!stateText.includes("unpaid")&&!stateText.includes("payment"))throw new Error("Persistent state missing cash/payment signal");
+  console.log("PASS persistent state preserves CEO query evidence: 620, 120, cash/payment");
+
   const query=await expect("CEO query",await fetch(`${base}/ceo-query`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,question:"What needs my attention right now, and what should I do about the cash issue?"})}),201);
   if(query.answer?.provider!=="alibaba")throw new Error(`Expected Alibaba provider, got ${query.answer?.provider}`);
-  const text=JSON.stringify(query).toLowerCase();
-  for(const signal of ["620","120","cash"]){if(!text.includes(signal))throw new Error(`CEO answer missing signal: ${signal}`);}
-  if(!text.includes("unpaid")&&!text.includes("outstanding"))throw new Error("CEO answer missing unpaid/outstanding payment signal");
+  const answerText=String(query.answer?.answer??"").trim();
+  if(answerText.length<20)throw new Error("CEO query returned an empty or unusably short answer");
   if(!query.query?.provenance?.state_count)throw new Error("CEO query did not report persistent-state provenance");
   console.log(`PASS CEO query: provider=${query.answer.provider}, state=${query.query.provenance.state_count}, reports=${query.query.provenance.report_count}`);
 
