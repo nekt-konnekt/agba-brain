@@ -40,10 +40,18 @@ try{
   if(!query.query?.provenance?.state_count)throw new Error("CEO query did not report persistent-state provenance");
   console.log(`PASS CEO query: provider=${query.answer.provider}, state=${query.provenance.state_items}, reports=${query.provenance.recent_reports}`);
 
-  const actions=await admin.from("agba_actions").select("id,description,status,priority,source_ceo_query_id").eq("organization_id",organizationId);
-  if(actions.error)throw new Error(`Action lookup failed: ${actions.error.message}`);
-  if((actions.data??[]).length<1)throw new Error("CEO query did not persist a management action");
-  if(!actions.data?.some((a:any)=>a.source_ceo_query_id===query.query.id))throw new Error("Persisted action is not linked to CEO query");
-  console.log(`PASS action memory: ${(actions.data??[]).length} action(s) persisted and linked`);
+  const firstActions=await admin.from("agba_actions").select("id,description,status,priority,source_ceo_query_id").eq("organization_id",organizationId).in("status",["open","in_progress"]);
+  if(firstActions.error)throw new Error(`Action lookup failed: ${firstActions.error.message}`);
+  if((firstActions.data??[]).length<1)throw new Error("CEO query did not persist a management action");
+  if(!firstActions.data?.some((a:any)=>a.source_ceo_query_id===query.query.id))throw new Error("Persisted action is not linked to CEO query");
+  console.log(`PASS action memory: ${(firstActions.data??[]).length} action(s) persisted and linked`);
+
+  const repeat=await expect("CEO repeat query",await fetch(`${base}/ceo-query`,{method:"POST",headers,body:JSON.stringify({organization_id:organizationId,question:"What should I do about the unpaid customer invoice?"})}),201);
+  const secondActions=await admin.from("agba_actions").select("id,description,status,priority,source_ceo_query_id").eq("organization_id",organizationId).in("status",["open","in_progress"]);
+  if(secondActions.error)throw new Error(`Repeat action lookup failed: ${secondActions.error.message}`);
+  if((secondActions.data??[]).length!==(firstActions.data??[]).length)throw new Error(`CEO action deduplication failed: action count changed from ${(firstActions.data??[]).length} to ${(secondActions.data??[]).length}`);
+  if(!(repeat.actions??[]).length)throw new Error("Repeat CEO query did not resolve to an existing management action");
+  if(repeat.actions.some((a:any)=>!firstActions.data?.some((existing:any)=>existing.id===a.id)))throw new Error("Repeat CEO query returned a new action instead of reusing the existing action");
+  console.log(`PASS action deduplication: ${(secondActions.data??[]).length} open action(s) after repeated management query`);
   console.log("AGBA CEO QUERY + ACTION MEMORY E2E PASS");
 }finally{await cleanup();}
