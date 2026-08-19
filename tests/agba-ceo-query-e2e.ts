@@ -39,7 +39,7 @@ try{
   for(const signal of ["620","120","cash"]){if(!text.includes(signal))throw new Error(`CEO answer missing signal: ${signal}`);}
   if(!text.includes("unpaid")&&!text.includes("outstanding"))throw new Error("CEO answer missing unpaid/outstanding payment signal");
   if(!query.query?.provenance?.state_count)throw new Error("CEO query did not report persistent-state provenance");
-  console.log(`PASS CEO query: provider=${query.answer.provider}, state=${query.provenance.state_items}, reports=${query.provenance.recent_reports}`);
+  console.log(`PASS CEO query: provider=${query.answer.provider}, state=${query.query.provenance.state_count}, reports=${query.query.provenance.report_count}`);
 
   const firstActions=await admin.from("agba_actions").select("id,description,status,priority,source_ceo_query_id").eq("organization_id",organizationId).in("status",["open","in_progress"]);
   if(firstActions.error)throw new Error(`Action lookup failed: ${firstActions.error.message}`);
