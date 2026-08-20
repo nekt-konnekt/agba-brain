@@ -3,7 +3,6 @@ export const DEFAULT_PUTER_FALLBACK_MODELS = ["gemini-3.1-flash-lite"];
 
 type Validator = (value: unknown) => boolean;
 type FetchLike = typeof fetch;
-
 type Attempt = { model: string; status?: number; reason: string };
 
 export class PuterAIError extends Error {
@@ -11,12 +10,7 @@ export class PuterAIError extends Error {
   code: string;
   attempts: Attempt[];
 
-  constructor(
-    code: string,
-    message: string,
-    status = 502,
-    attempts: Attempt[] = [],
-  ) {
+  constructor(code: string, message: string, status = 502, attempts: Attempt[] = []) {
     super(message);
     this.name = "PuterAIError";
     this.status = status;
@@ -38,12 +32,7 @@ function configuredModels(explicitModel?: string): string[] {
     ?.split(",")
     .map((model) => model.trim())
     .filter(Boolean) ?? [];
-
   const primary = explicitModel ?? Deno.env.get("PUTER_MODEL") ?? DEFAULT_PUTER_MODEL;
-
-  // PUTER_MODEL is a preferred model, not a single point of failure.
-  // Always retain the built-in fallback chain unless explicitly supplied
-  // through PUTER_MODELS, in which case that list is authoritative.
   if (configured.length) return [...new Set(configured)];
   return [...new Set([primary, ...DEFAULT_PUTER_FALLBACK_MODELS])];
 }
@@ -69,12 +58,7 @@ const retryableStatus = (status: number) => status === 402 || status === 429 || 
 export async function callPuterJson(
   prompt: string,
   validator: Validator,
-  options: {
-    fetchImpl?: FetchLike;
-    timeoutMs?: number;
-    maxRetries?: number;
-    model?: string;
-  } = {},
+  options: { fetchImpl?: FetchLike; timeoutMs?: number; maxRetries?: number; model?: string } = {},
 ) {
   const token = Deno.env.get("PUTER_AUTH_TOKEN");
   if (!token) throw new PuterAIError("puter_not_configured", "PUTER_AUTH_TOKEN is not configured", 500);
@@ -83,9 +67,7 @@ export async function callPuterJson(
   const timeoutMs = options.timeoutMs ?? 20000;
   const maxRetries = options.maxRetries ?? 1;
   const models = configuredModels(options.model);
-  const baseUrl = normalizeBaseUrl(
-    Deno.env.get("PUTER_BASE_URL") ?? "https://api.puter.com/puterai/openai/v1",
-  );
+  const baseUrl = normalizeBaseUrl(Deno.env.get("PUTER_BASE_URL") ?? "https://api.puter.com/puterai/openai/v1");
   const attempts: Attempt[] = [];
 
   for (const model of models) {
@@ -95,18 +77,14 @@ export async function callPuterJson(
       try {
         const response = await fetchImpl(`${baseUrl}/chat/completions`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({
             model,
             temperature: 0.1,
             messages: [
               {
                 role: "system",
-                content:
-                  "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences.",
+                content: "You are Agba, a company's operating brain. Reason only from supplied evidence. Do not invent facts. Return only valid JSON matching the requested schema. Do not wrap JSON in markdown fences.",
               },
               { role: "user", content: prompt },
             ],
@@ -121,6 +99,8 @@ export async function callPuterJson(
             await new Promise((resolve) => setTimeout(resolve, 250 * (retry + 1)));
             continue;
           }
+          // A model-specific 4xx or exhausted retries should not prevent
+          // another configured Puter model from being tried.
           break;
         }
 
@@ -135,16 +115,12 @@ export async function callPuterJson(
         const value = extractJsonContent(payload);
         if (!validator(value)) {
           attempts.push({ model: `puter/${model}`, reason: "invalid_model_json" });
+          // Valid HTTP is not enough. Continue to the next model if this
+          // model cannot produce output matching Agba's required schema.
           break;
         }
 
-        return {
-          value,
-          payload,
-          model: payload?.model ?? model,
-          provider: "puter",
-          attempts,
-        };
+        return { value, payload, model: payload?.model ?? model, provider: "puter", attempts };
       } catch (error) {
         const timedOut = error instanceof DOMException && error.name === "AbortError";
         attempts.push({ model: `puter/${model}`, reason: timedOut ? "timeout" : "network_error" });
