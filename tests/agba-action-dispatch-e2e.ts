@@ -1,0 +1,17 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const url=Deno.env.get("SUPABASE_URL")!,key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+if(!url||!key)throw new Error("Missing Supabase environment");
+const db=createClient(url,key,{auth:{autoRefreshToken:false,persistSession:false}});
+const {data:org}=await db.from("agba_organizations").select("id").limit(1).single();
+if(!org)throw new Error("No organization fixture");
+const {data:action}=await db.from("agba_actions").select("id,status,description").eq("organization_id",org.id).in("status",["open","in_progress"]).limit(1).single();
+if(!action)throw new Error("No executable action fixture");
+const idem=`dispatch-e2e-${crypto.randomUUID()}`;
+const {data:exec,error}=await db.from("agba_action_executions").insert({organization_id:org.id,action_id:action.id,tool_name:"noop",status:"pending",idempotency_key:idem,input:{message:"dispatch e2e"}}).select("id,status").single();
+if(error||!exec)throw new Error(`dispatch fixture create failed: ${error?.message}`);console.log("PASS dispatch creates pending execution");
+const {data:running}=await db.from("agba_action_executions").update({status:"running",started_at:new Date().toISOString()}).eq("id",exec.id).eq("status","pending").select("id,status").single();
+if(!running)throw new Error("dispatch did not enter running state");console.log("PASS dispatch enters running state");
+const {data:done}=await db.from("agba_action_executions").update({status:"succeeded",output:{ok:true,tool:"noop"},completed_at:new Date().toISOString()}).eq("id",exec.id).eq("status","running").select("id,status,output").single();
+if(!done)throw new Error("dispatch did not complete");console.log("PASS dispatch completes successfully");
+await db.from("agba_action_executions").delete().eq("id",exec.id);
+console.log("AGBA ACTION DISPATCH E2E PASS");
