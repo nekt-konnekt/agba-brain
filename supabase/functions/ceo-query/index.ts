@@ -47,7 +47,7 @@ Deno.serve(async(req)=>{
   if(stateError)return json({error:"state_lookup_failed",detail:stateError.message},400);
   const {data:reports,error:reportsError}=await admin.from("agba_reports").select("id,department_id,raw_text,created_at").eq("organization_id",body.organization_id).order("created_at",{ascending:false}).limit(20);
   if(reportsError)return json({error:"report_lookup_failed",detail:reportsError.message},400);
-  const {data:openActions,error:openActionsError}=await admin.from("agba_actions").select("id,owner_name,description,deadline,status,priority,created_at,metadata").eq("organization_id",body.organization_id).in("status",["open","in_progress"]).order("created_at",{ascending:false}).limit(30);
+  const {data:openActions,error:openActionsError}=await admin.from("agba_management_open_actions").select("id,owner_name,description,deadline,status,priority,created_at,metadata").eq("organization_id",body.organization_id).order("created_at",{ascending:false}).limit(30);
   if(openActionsError)return json({error:"action_lookup_failed",detail:openActionsError.message},400);
   const completedActionMemory=(state??[]).filter((s:any)=>s.metadata?.memory_type==="completed_management_action");
   const operationalState=(state??[]).filter((s:any)=>s.metadata?.memory_type!=="completed_management_action");
