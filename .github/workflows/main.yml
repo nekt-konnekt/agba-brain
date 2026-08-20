@@ -18,6 +18,8 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Run Puter provider fallback test
+        run: deno run --allow-env --allow-net tests/puter-provider-fallback.ts
       - name: Run Agba Alibaba E2E
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
