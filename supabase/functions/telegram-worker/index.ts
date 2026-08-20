@@ -4,6 +4,7 @@ const headers = { "Content-Type": "application/json" };
 const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers });
 const supabaseUrl = () => Deno.env.get("SUPABASE_URL") || "";
 const serviceKey = () => Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const MAX_ATTEMPTS = 5;
 
 async function workerSecret(sb: any) {
   const { data, error } = await sb.rpc("agba_telegram_worker_secret");
@@ -49,9 +50,16 @@ Deno.serve(async (req) => {
   const item = candidates?.[0];
   if (!item) return json({ ok: true, processed: 0 });
 
+  const currentAttempts = Number(item.attempts || 0);
+  if (currentAttempts >= MAX_ATTEMPTS) {
+    await sb.from("agba_telegram_update_inbox").update({ status: "dead_letter", locked_at: null, last_error: `max_attempts_exceeded:${MAX_ATTEMPTS}` }).eq("id", item.id);
+    return json({ ok: true, processed: 0, dead_lettered: true, update_id: item.telegram_update_id, attempts: currentAttempts });
+  }
+
+  const nextAttempt = currentAttempts + 1;
   const { data: claimed, error: claimError } = await sb.from("agba_telegram_update_inbox").update({
     status: "processing",
-    attempts: Number(item.attempts || 0) + 1,
+    attempts: nextAttempt,
     locked_at: new Date().toISOString(),
     last_error: null,
   }).eq("id", item.id).in("status", ["received", "failed"])
@@ -66,8 +74,13 @@ Deno.serve(async (req) => {
     return json({ ok: true, processed: 1, update_id: item.telegram_update_id, attempts: claimed.attempts });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await sb.from("agba_telegram_update_inbox").update({ status: "failed", locked_at: null, last_error: message.slice(0, 2000) }).eq("id", claimed.id);
-    console.error("telegram_worker_dispatch_failed", { updateId: item.telegram_update_id, message });
-    return json({ ok: false, processed: 0, update_id: item.telegram_update_id, error: message }, 500);
+    const finalFailure = nextAttempt >= MAX_ATTEMPTS;
+    await sb.from("agba_telegram_update_inbox").update({
+      status: finalFailure ? "dead_letter" : "failed",
+      locked_at: null,
+      last_error: finalFailure ? `max_attempts_exceeded:${MAX_ATTEMPTS};${message}`.slice(0, 2000) : message.slice(0, 2000),
+    }).eq("id", claimed.id);
+    console.error("telegram_worker_dispatch_failed", { updateId: item.telegram_update_id, attempts: nextAttempt, deadLettered: finalFailure, message });
+    return json({ ok: false, processed: 0, update_id: item.telegram_update_id, attempts: nextAttempt, dead_lettered: finalFailure, error: message }, 500);
   }
 });
