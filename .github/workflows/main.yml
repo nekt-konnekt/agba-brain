@@ -33,3 +33,8 @@ jobs:
           deno run --allow-net --allow-env tests/agba-memory-e2e.ts
           deno run --allow-net --allow-env tests/agba-ceo-query-e2e.ts
           deno run --allow-net --allow-env tests/agba-action-memory-e2e.ts
+      - name: Run Agba action execution E2E
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: deno run --allow-net --allow-env tests/agba-action-execution-e2e.ts
