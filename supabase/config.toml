@@ -12,3 +12,12 @@ verify_jwt = true
 
 [functions.daily-briefing]
 verify_jwt = true
+
+[functions.telegram-receiver]
+verify_jwt = false
+
+[functions.telegram-gateway]
+verify_jwt = false
+
+[functions.telegram-worker]
+verify_jwt = false
