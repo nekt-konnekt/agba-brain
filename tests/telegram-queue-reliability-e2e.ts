@@ -1,0 +1,202 @@
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
+  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
+}
+
+const headers = {
+  apikey: SERVICE_ROLE_KEY,
+  Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+  "Content-Type": "application/json",
+};
+
+async function rest(path: string, init: RequestInit = {}) {
+  const response = await fetch(`${SUPABASE_URL}${path}`, {
+    ...init,
+    headers: { ...headers, ...(init.headers ?? {}) },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${init.method ?? "GET"} ${path} failed (${response.status}): ${text}`);
+  }
+  return text ? JSON.parse(text) : null;
+}
+
+async function rpc(name: string, body: Record<string, unknown>) {
+  return await rest(`/rest/v1/rpc/${name}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
+}
+
+function assertEq(actual: unknown, expected: unknown, message: string) {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+const updateId = Number(`${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`);
+const workerA = `reliability-a-${crypto.randomUUID()}`;
+const workerB = `reliability-b-${crypto.randomUUID()}`;
+let inboxId: string | undefined;
+let deliveryId: string | undefined;
+
+try {
+  console.log("TELEGRAM QUEUE RELIABILITY E2E");
+
+  const inserted = await rest("/rest/v1/agba_telegram_update_inbox?select=id,status,attempts,max_attempts", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      telegram_update_id: updateId,
+      payload: { reliability_test: true, update_id: updateId },
+      chat_id: 999999999,
+      status: "received",
+      attempts: 0,
+      max_attempts: 3,
+      next_attempt_at: new Date().toISOString(),
+    }),
+  });
+  inboxId = inserted[0].id;
+  assertEq(inserted[0].status, "received", "fixture must start received");
+
+  const firstClaim = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerA,
+    p_lease_seconds: 120,
+  });
+  assertEq(firstClaim.length, 1, "received update must be claimable once");
+  assertEq(firstClaim[0].id, inboxId, "claim must return our test update");
+  assertEq(firstClaim[0].status, "processing", "claim must move update to processing");
+  assertEq(firstClaim[0].attempts, 1, "first claim must increment attempts");
+  console.log("- inbox claim: PASS");
+
+  const stolenClaim = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerB,
+    p_lease_seconds: 120,
+  });
+  assertEq(stolenClaim.length, 0, "live processing lease must not be stolen");
+  console.log("- live inbox lease protection: PASS");
+
+  await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ locked_at: new Date(Date.now() - 121_000).toISOString() }),
+  });
+
+  const reclaimed = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerB,
+    p_lease_seconds: 120,
+  });
+  assertEq(reclaimed.length, 1, "expired processing lease must be reclaimable");
+  assertEq(reclaimed[0].worker_id, workerB, "reclaimed update must belong to new worker");
+  assertEq(reclaimed[0].attempts, 2, "reclaim must increment attempts");
+  console.log("- expired inbox lease recovery: PASS");
+
+  await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "failed", locked_at: null, attempts: 2, max_attempts: 3, next_attempt_at: new Date().toISOString() }),
+  });
+
+  const retry = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerA,
+    p_lease_seconds: 120,
+  });
+  assertEq(retry.length, 1, "failed update below max attempts must retry");
+  assertEq(retry[0].attempts, 3, "retry must increment attempts");
+  console.log("- inbox retry: PASS");
+
+  await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "failed", locked_at: null, attempts: 3, max_attempts: 3, next_attempt_at: new Date().toISOString() }),
+  });
+  const deadClaim = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerA,
+    p_lease_seconds: 120,
+  });
+  assertEq(deadClaim.length, 0, "max-attempt failed update must not retry");
+  console.log("- inbox max-attempt boundary: PASS");
+
+  await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "dead", locked_at: null, next_attempt_at: null }),
+  });
+  const deadReclaim = await rpc("agba_claim_telegram_update", {
+    p_worker_id: workerB,
+    p_lease_seconds: 120,
+  });
+  assertEq(deadReclaim.length, 0, "dead update must never be reclaimed");
+  console.log("- dead inbox non-reclaimability: PASS");
+
+  const deliveryInserted = await rest("/rest/v1/agba_telegram_delivery_outbox?select=id,status,attempts,max_attempts", {
+    method: "POST",
+    headers: { Prefer: "return=representation" },
+    body: JSON.stringify({
+      inbox_id: inboxId,
+      chat_id: "999999999",
+      payload: { text: "reliability test", test: true },
+      status: "pending",
+      attempts: 0,
+      max_attempts: 3,
+      next_attempt_at: new Date().toISOString(),
+    }),
+  });
+  deliveryId = deliveryInserted[0].id;
+
+  const deliveryClaim = await rpc("agba_claim_telegram_delivery", {
+    p_worker_id: workerA,
+    p_lease_seconds: 120,
+  });
+  assertEq(deliveryClaim.length, 1, "pending delivery must be claimable");
+  assertEq(deliveryClaim[0].id, deliveryId, "claim must return our test delivery");
+  assertEq(deliveryClaim[0].status, "sending", "delivery claim must move to sending");
+  assertEq(deliveryClaim[0].attempts, 1, "delivery claim must increment attempts");
+  console.log("- delivery claim: PASS");
+
+  const stolenDelivery = await rpc("agba_claim_telegram_delivery", {
+    p_worker_id: workerB,
+    p_lease_seconds: 120,
+  });
+  assertEq(stolenDelivery.length, 0, "live sending lease must not be stolen");
+  console.log("- live delivery lease protection: PASS");
+
+  await rest(`/rest/v1/agba_telegram_delivery_outbox?id=eq.${deliveryId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ locked_at: new Date(Date.now() - 121_000).toISOString() }),
+  });
+  const deliveryReclaimed = await rpc("agba_claim_telegram_delivery", {
+    p_worker_id: workerB,
+    p_lease_seconds: 120,
+  });
+  assertEq(deliveryReclaimed.length, 1, "expired sending lease must be reclaimable");
+  assertEq(deliveryReclaimed[0].worker_id, workerB, "reclaimed delivery must belong to new worker");
+  assertEq(deliveryReclaimed[0].attempts, 2, "delivery reclaim must increment attempts");
+  console.log("- expired delivery lease recovery: PASS");
+
+  const completed = await rpc("agba_complete_telegram_delivery", {
+    p_id: deliveryId,
+    p_telegram_message_id: 987654321,
+  });
+  assertEq(completed.length, 1, "sending delivery must complete");
+  assertEq(completed[0].status, "sent", "completed delivery must be sent");
+  console.log("- delivery completion: PASS");
+
+  const completeAgain = await rpc("agba_complete_telegram_delivery", {
+    p_id: deliveryId,
+    p_telegram_message_id: 987654321,
+  });
+  assertEq(completeAgain.length, 0, "sent delivery must not be completed twice");
+  console.log("- delivery terminal idempotency: PASS");
+
+  console.log("TELEGRAM QUEUE RELIABILITY E2E: PASS");
+} finally {
+  if (deliveryId) {
+    await rest(`/rest/v1/agba_telegram_delivery_outbox?id=eq.${deliveryId}`, { method: "DELETE" }).catch((error) => console.error("delivery cleanup failed", error));
+  }
+  if (inboxId) {
+    await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`, { method: "DELETE" }).catch((error) => console.error("inbox cleanup failed", error));
+  }
+}
