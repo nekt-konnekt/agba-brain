@@ -66,15 +66,38 @@ The following production migration versions were observed in Supabase but are no
 - 20260821023613 `enforce_telegram_delivery_idempotency`
 - 20260821033422 `fix_management_open_actions_metadata`
 
+## Edge Function drift
+
+Production currently has these active Edge Functions:
+
+- `agba-reasoning` v38
+- `company-setup` v14
+- `report-ingestion` v14
+- `daily-briefing` v14
+- `company-state` v11
+- `company-state-v2` v19
+- `daily-briefing-v2` v27
+- `ceo-query` v12
+- `telegram-gateway` v35
+- `action-dispatch` v3
+- `telegram-receiver` v4
+- `telegram-worker` v8
+
+The reconciliation branch contains source directories for most of the newer functions, but it also contains `action-executor` without a corresponding deployed production function, and it does not currently contain source directories for the deployed `company-state` / `company-state-v2` functions. This means the repository and production deployment set are not yet a one-to-one reproducible artifact.
+
+This is a deployment drift issue, not necessarily a runtime bug. We must determine which functions are canonical, which are legacy compatibility endpoints, and which are intentionally not deployed before changing or deleting anything.
+
 ## Important rule
 
-Do not fabricate these missing migration files from their names. The SQL must be recovered from the actual production schema/history or from the original commits that applied them.
+Do not fabricate missing migration files or function implementations from names alone. SQL must be recovered from the actual production schema/history or from the original commits that created them. Function source must be recovered from the deployed function or the original repository commit.
 
 ## Next reconciliation step
 
 1. Export the production migration SQL or recover the exact SQL from the commits/workspace that created these migrations.
-2. Commit the recovered migrations to GitHub in the same order.
-3. Verify that a fresh database can reproduce the production schema from GitHub migrations.
-4. Only after that, address security/performance findings and application-level E2E failures.
+2. Recover source for every deployed function and map it to the repository.
+3. Commit the recovered migrations and canonical function source to GitHub in the same logical order.
+4. Verify that a fresh database can reproduce the production schema from GitHub migrations.
+5. Verify that production Edge Functions can be deployed from the repository without untracked code.
+6. Only after that, address security/performance findings and application-level E2E failures.
 
-This document is intentionally a register, not a claim that the missing SQL has been reconstructed.
+This document is intentionally a register, not a claim that the missing SQL or source has been reconstructed.
