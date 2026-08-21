@@ -32,6 +32,16 @@ jobs:
             exit 1
           fi
 
+      - name: Link production project
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            supabase link --project-ref iijhsdaqaqywzpavdonn --password "$SUPABASE_DB_PASSWORD"
+          else
+            echo "Using SUPABASE_DB_URL for database operations."
+          fi
+
       - name: Dump current production public schema
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -40,7 +50,6 @@ jobs:
           if [ -n "$SUPABASE_DB_URL" ]; then
             supabase db dump --db-url "$SUPABASE_DB_URL" --schema public -f supabase/production-schema.sql
           else
-            supabase link --project-ref iijhsdaqaqywzpavdonn --password "$SUPABASE_DB_PASSWORD"
             supabase db dump --linked --schema public -f supabase/production-schema.sql
           fi
 
@@ -49,20 +58,43 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           if [ -n "$SUPABASE_DB_PASSWORD" ]; then
-            supabase link --project-ref iijhsdaqaqywzpavdonn --password "$SUPABASE_DB_PASSWORD" || true
-            supabase migration list || true
+            supabase migration list
           else
             echo "Skipping migration list because only SUPABASE_DB_URL was provided."
           fi
 
-      - name: Commit production schema snapshot
+      - name: Generate non-destructive production schema reconciliation
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
-          if git diff --quiet -- supabase/production-schema.sql; then
-            echo "Production schema snapshot unchanged."
-            exit 0
+          if [ -n "$SUPABASE_DB_URL" ]; then
+            supabase db diff --db-url "$SUPABASE_DB_URL" --schema public -f production_reconciliation
+          else
+            supabase db diff --linked --schema public -f production_reconciliation
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/production-schema.sql
-          git commit -m "chore: snapshot production schema [skip ci]"
-          git push
+
+      - name: Validate the full migration chain locally
+        run: |
+          supabase db reset --local --no-seed
+
+      - name: Commit production schema and reconciliation migration
+        run: |
+          if [ ! -f supabase/production-schema.sql ]; then
+            echo "Production schema snapshot was not created."
+            exit 1
+          fi
+
+          if ! ls supabase/migrations/*_production_reconciliation.sql >/dev/null 2>&1; then
+            echo "Production reconciliation migration was not generated."
+            exit 1
+          fi
+
+          if git status --porcelain -- supabase/production-schema.sql supabase/migrations | grep -q .; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add supabase/production-schema.sql supabase/migrations/*_production_reconciliation.sql
+            git commit -m "chore: reconcile production schema [skip ci]"
+            git push
+          else
+            echo "No reconciliation changes detected."
+          fi
