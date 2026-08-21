@@ -1,0 +1,1 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Ask Agba</title></head><body><script>fetch('/web/office.html').then(r=>r.text()).then(t=>{t=t.replace('</body>','<script>setTimeout(()=>document.querySelector(\'[data-view="conversation"]\')?.click(),0);<\/script></body>');document.open();document.write(t);document.close()})</script></body></html>
