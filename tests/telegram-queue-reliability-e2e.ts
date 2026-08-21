@@ -58,6 +58,7 @@ try {
       attempts: 0,
       max_attempts: 3,
       next_attempt_at: new Date().toISOString(),
+      received_at: oldestCreatedAt,
       created_at: oldestCreatedAt,
     }),
   });
