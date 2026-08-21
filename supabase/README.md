@@ -1,6 +1,6 @@
 # Agba Supabase
 
-The SQL in `migrations/` is the database source of truth for Agba V1.
+The SQL in `migrations/` is intended to be the database source of truth for Agba V1.
 
 ## Migration policy
 
@@ -9,12 +9,15 @@ The SQL in `migrations/` is the database source of truth for Agba V1.
 - Keep destructive changes explicit.
 - Keep RLS enabled on tenant data.
 - Test policies with CEO and Department Head identities before shipping.
+- Production must be reproducible from the repository migration history.
 
-## Current migration
+## Reconciliation status
 
-`20260817120000_001_agba_v1_core.sql`
+The connected production project currently contains migrations through `20260821033422_fix_management_open_actions_metadata`.
 
-Creates the Agba V1 schema, indexes, private authorization helpers, timestamp trigger, and initial RLS policies.
+The reconciliation branch does **not** yet contain the complete production migration history. Do not treat the repository migration directory as a complete representation of production until the drift is reconciled.
+
+See `docs/PRODUCTION_DRIFT.md` for the observed migration gap and the recovery plan.
 
 ## Namespace
 
