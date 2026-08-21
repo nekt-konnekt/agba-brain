@@ -1,1 +1,12 @@
-{"rewrites":[{"source":"/","destination":"/web/index.html"},{"source":"/app.js","destination":"/web/app.js"},{"source":"/styles.css","destination":"/web/styles.css"}]}
+{
+  "rewrites": [
+    { "source": "/", "destination": "/web/index.html" },
+    { "source": "/office", "destination": "/web/office.html" },
+    { "source": "/ask", "destination": "/web/office.html" },
+    { "source": "/actions", "destination": "/web/office.html" },
+    { "source": "/departments", "destination": "/web/office.html" },
+    { "source": "/decisions", "destination": "/web/office.html" },
+    { "source": "/app.js", "destination": "/web/app.js" },
+    { "source": "/styles.css", "destination": "/web/styles.css" }
+  ]
+}
