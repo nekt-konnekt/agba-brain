@@ -18,6 +18,8 @@ jobs:
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Run reliability state machine contracts
+        run: deno run tests/reliability-state-machine.ts
       - name: Run Puter provider fallback test
         run: deno run --allow-env --allow-net tests/puter-provider-fallback.ts
       - name: Run Agba Alibaba E2E
@@ -37,4 +39,4 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: deno run --allow-net --allow-env tests/agba-action-execution-e2e.ts
+        run: deno run --allow-net tests/agba-action-execution-e2e.ts
