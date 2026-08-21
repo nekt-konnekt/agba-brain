@@ -1,0 +1,68 @@
+name: Reconcile production schema
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - reconcile/prod-source-of-truth
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Validate database credentials
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] && [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "Missing SUPABASE_DB_URL or SUPABASE_DB_PASSWORD."
+            echo "Set one of these repository/environment secrets before running reconciliation."
+            exit 1
+          fi
+
+      - name: Dump current production public schema
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -n "$SUPABASE_DB_URL" ]; then
+            supabase db dump --db-url "$SUPABASE_DB_URL" --schema public -f supabase/production-schema.sql
+          else
+            supabase link --project-ref iijhsdaqaqywzpavdonn --password "$SUPABASE_DB_PASSWORD"
+            supabase db dump --linked --schema public -f supabase/production-schema.sql
+          fi
+
+      - name: Compare migration history
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -n "$SUPABASE_DB_PASSWORD" ]; then
+            supabase link --project-ref iijhsdaqaqywzpavdonn --password "$SUPABASE_DB_PASSWORD" || true
+            supabase migration list || true
+          else
+            echo "Skipping migration list because only SUPABASE_DB_URL was provided."
+          fi
+
+      - name: Commit production schema snapshot
+        run: |
+          if git diff --quiet -- supabase/production-schema.sql; then
+            echo "Production schema snapshot unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/production-schema.sql
+          git commit -m "chore: snapshot production schema [skip ci]"
+          git push
