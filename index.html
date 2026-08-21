@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta name="description" content="Agba, the operating brain for your company." />
+    <title>Agba 🧠</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section id="auth-view" class="auth-card">
+        <div class="brand-mark">🧠</div>
+        <p class="eyebrow">AGBA</p>
+        <h1>Your company's operating brain.</h1>
+        <p class="muted">Reports in. Company memory, priorities, and decisions out.</p>
+        <form id="auth-form" class="stack">
+          <label>Email<input id="auth-email" type="email" autocomplete="email" required /></label>
+          <label>Password<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required /></label>
+          <div class="row">
+            <button id="login-btn" type="submit" class="primary">Sign in</button>
+            <button id="signup-btn" type="button" class="secondary">Create account</button>
+          </div>
+          <p id="auth-message" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section id="setup-view" class="hidden">
+        <header class="topbar">
+          <div><p class="eyebrow">FIRST RUN</p><h1>Set up your company</h1></div>
+          <button id="setup-signout" class="secondary">Sign out</button>
+        </header>
+        <form id="setup-form" class="panel stack">
+          <div class="grid two">
+            <label>Company name<input id="company-name" required /></label>
+            <label>Company slug<input id="company-slug" required pattern="[a-z0-9-]+" /></label>
+            <label>CEO full name<input id="ceo-name" required /></label>
+            <label>Timezone<input id="company-timezone" value="Africa/Lagos" /></label>
+            <label>Currency<input id="company-currency" value="NGN" maxlength="3" /></label>
+          </div>
+          <div class="section-head"><div><h2>Departments</h2><p class="muted">Add the people who will report into Agba.</p></div><button id="add-department" type="button" class="secondary">Add department</button></div>
+          <div id="departments" class="stack"></div>
+          <button class="primary" type="submit">Create company</button>
+          <p id="setup-message" class="message" role="status"></p>
+        </form>
+      </section>
+
+      <section id="app-view" class="hidden">
+        <header class="topbar">
+          <div><p class="eyebrow">AGBA 🧠</p><h1 id="company-title">Company</h1><p id="actor-meta" class="muted"></p></div>
+          <button id="signout" class="secondary">Sign out</button>
+        </header>
+
+        <div class="toolbar">
+          <button id="refresh" class="secondary">Refresh</button>
+          <button id="generate-briefing" class="primary">Generate briefing</button>
+        </div>
+
+        <div id="app-message" class="message" role="status"></div>
+
+        <div class="grid two main-grid">
+          <section class="panel briefing-panel">
+            <div class="section-head"><div><p class="eyebrow">TODAY</p><h2 id="briefing-title">Daily briefing</h2></div><span id="briefing-status" class="pill">Waiting</span></div>
+            <p id="briefing-summary" class="briefing-summary muted">No briefing yet.</p>
+            <div id="briefing-items" class="stack"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">MANAGEMENT</p><h2>Open actions</h2></div></div>
+            <div id="actions" class="stack empty-state">Loading...</div>
+          </section>
+        </div>
+
+        <div class="grid two">
+          <section class="panel">
+            <div class="section-head"><div><p class="eyebrow">REPORTING</p><h2>Send a report</h2></div></div>
+            <form id="report-form" class="stack">
+              <label>Department<select id="report-department"></select></label>
+              <label>Report date<input id="report-date" type="date" /></label>
+              <label>Report<textarea id="report-text" rows="8" required placeholder="What happened today? Include numbers, blockers, customer issues, cash, materials, delivery, or anything management needs to know."></textarea></label>
+              <button class="primary" type="submit">Submit report</button>
+              <p id="report-message" class="message" role="status"></p>
+            </form>
+          </section>
+
+          <section id="ask-panel" class="panel">
+            <div class="section-head"><div><p class="eyebrow">CEO INTELLIGENCE</p><h2>Ask Agba</h2></div></div>
+            <form id="ask-form" class="stack">
+              <label>Question<textarea id="question" rows="5" required placeholder="How is the business doing today?"></textarea></label>
+              <button class="primary" type="submit">Ask Agba</button>
+            </form>
+            <article id="answer" class="answer hidden"></article>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="section-head"><div><p class="eyebrow">EVIDENCE</p><h2>Recent reports</h2></div></div>
+          <div id="reports" class="report-list empty-state">Loading...</div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
