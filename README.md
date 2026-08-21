@@ -1,58 +1,80 @@
-# Agba
+# Agba 🧠
 
 Agba is the company's operating brain. It receives structured and natural-language reports from the CEO and department heads, maintains company memory, detects important changes, and gives the right person the right intelligence.
+
+## Product surfaces
+
+- **Web:** authenticated company workspace for company setup, daily briefing, reports, open management actions, and CEO intelligence queries.
+- **Telegram:** conversational interface backed by a durable inbox and delivery outbox with lease recovery, retry, dead-letter handling, and idempotency.
+- **Supabase:** source of truth for company state, evidence, memory, actions, reports, briefings, and Telegram queue state.
+- **AI gateway:** Alibaba/DashScope first, OpenAI fallback, with Puter available where configured. Model output is validated before it becomes Agba state.
 
 ## V1 users
 
 - CEO: full company intelligence.
-- Department Head: department intelligence plus the company context explicitly permitted by policy.
-- Agba: the reasoning layer over governed company data. It does not grant access by itself.
+- Department Head: department intelligence plus company context explicitly permitted by policy.
+- Agba: reasoning over governed company data. It does not grant access by itself.
 
-## Core product surface
+## Web app
 
-The primary interface is conversation and reporting. The CEO also gets **Agba's Office**, a small executive cockpit for actual company state, exceptions, priorities, and recent decisions. It is not a generic analytics dashboard.
-
-## Repository
+The repository root contains the production web surface:
 
 ```text
-agba-brain/
-├── docs/
-│   ├── 01_PRODUCT.md
-│   ├── 02_PRINCIPLES.md
-│   ├── 03_AGBA_BEHAVIOR.md
-│   ├── 04_ARCHITECTURE.md
-│   ├── 05_DATABASE.md
-│   ├── 06_REPORTING.md
-│   ├── 07_CEO_EXPERIENCE.md
-│   ├── COMPANY_SETUP.md
-│   ├── COMPANY_SETUP_API.md
-│   ├── FLOW.md
-│   ├── V1_SCOPE.md
-│   └── DECISIONS.md
-└── supabase/
-    ├── functions/
-    │   └── company-setup/
-    │       └── index.ts
-    └── migrations/
-        ├── 20260817120000_001_agba_v1_core.sql
-        └── 20260817133000_company_setup.sql
+index.html
+app.js
+styles.css
+vercel.json
 ```
 
-The uploaded ZIP files in the repository are retained as historical artifacts. The source-of-truth files are the readable Markdown, SQL, and TypeScript files in this tree.
+The browser uses the Supabase publishable key only. Service-role credentials remain server-side inside Supabase Edge Functions.
 
-## Build order
+The web flow is:
 
-1. Product and behavior contract
-2. Database and RLS
-3. Company setup
-4. Reporting ingestion
-5. Agba reasoning and briefing
-6. Agba's Office
+1. Sign in or create an account.
+2. First-time CEO completes company setup.
+3. Agba loads the authenticated user's company and role.
+4. CEO or Department Head submits reports.
+5. Agba generates a daily briefing from persisted state, reports, and tasks.
+6. CEO can ask Agba questions. Answers are persisted with provenance and management actions.
 
-## Security rule
+## Backend
+
+Important Edge Functions include:
+
+- `company-setup`
+- `report-ingestion`
+- `agba-reasoning`
+- `company-state`
+- `company-state-v2`
+- `daily-briefing`
+- `daily-briefing-v2`
+- `ceo-query`
+- `action-dispatch`
+- `telegram-receiver`
+- `telegram-worker`
+- `telegram-gateway`
+
+## Reliability
+
+CI contains deterministic reliability contracts for:
+
+- action idempotency
+- inbox lease protection and recovery
+- delivery lease protection and recovery
+- retry and max-attempt boundaries
+- terminal dead-letter behavior
+- Telegram delivery idempotency
+- longitudinal memory
+- CEO query action memory and incident isolation
+
+Production reconciliation is handled separately from normal application CI. The reconciliation workflow snapshots the live public schema, compares production against the repository migration chain, generates a non-destructive reconciliation migration, and validates a clean local reset before committing the result.
+
+## Security model
 
 Authorization is enforced in PostgreSQL and application services. The model never decides whether a user is allowed to see a record.
 
-## Company Setup
+The web application never receives service-role credentials. Telegram worker credentials remain inside the Edge Function runtime. Security-definer database functions are being hardened so internal worker RPCs are not publicly callable.
 
-Company provisioning is server-side. The `company-setup` Supabase Edge Function authenticates the CEO, creates the organization, provisions the CEO identity, invites Department Heads, assigns departments, and marks setup complete. The browser is never trusted to assign its own Agba role or department.
+## Production source of truth
+
+GitHub is the source of code and migration history. Supabase production is the runtime source of truth until reconciliation is complete. No destructive remote reset is part of the reconciliation process.
