@@ -1,5 +1,6 @@
 # Agba Supabase project configuration
 # Production deployment is managed from the main branch.
+# Every deployed function must be declared here so verify_jwt is source-controlled.
 
 [functions.company-setup]
 verify_jwt = true
@@ -11,6 +12,24 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.daily-briefing]
+verify_jwt = true
+
+[functions.company-state]
+verify_jwt = true
+
+[functions.company-state-v2]
+verify_jwt = true
+
+[functions.daily-briefing-v2]
+verify_jwt = false
+
+[functions.ceo-query]
+verify_jwt = true
+
+[functions.action-dispatch]
+verify_jwt = true
+
+[functions.action-executor]
 verify_jwt = true
 
 [functions.telegram-receiver]
