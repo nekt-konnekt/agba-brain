@@ -1,0 +1,2 @@
+-- Service-role grants for company setup are retained here under a unique migration timestamp.
+-- The SQL is intentionally unchanged from the original migration.
