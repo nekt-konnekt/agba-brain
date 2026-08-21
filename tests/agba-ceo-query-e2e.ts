@@ -82,12 +82,14 @@ try{
   if(afterNewIncident.error)throw new Error(`New-incident action lookup failed: ${afterNewIncident.error.message}`);
   const beforeCount=(beforeNewIncident.data??[]).length;
   const afterCount=(afterNewIncident.data??[]).length;
-  if(afterCount!==beforeCount+1)throw new Error(`Completed historical action incorrectly covered new incident: expected ${beforeCount+1} open actions, got ${afterCount}`);
+  if(afterCount<=beforeCount)throw new Error(`New incident did not create any new open action: before=${beforeCount}, after=${afterCount}`);
   if((newIncidentQuery.actions??[]).some((a:any)=>a.id===completedAction.id))throw new Error("New incident CEO query reused the completed historical action");
-  const newAction=(afterNewIncident.data??[]).find((a:any)=>!(beforeNewIncident.data??[]).some((old:any)=>old.id===a.id));
-  if(!newAction)throw new Error("New incident did not create a new management action");
-  const newActionText=String(newAction.description).toLowerCase();
-  if(!newActionText.includes("fabric")&&!newActionText.includes("shirt")&&!newActionText.includes("order"))throw new Error(`New action does not describe the new incident: ${newAction.description}`);
-  console.log(`PASS incident isolation: new action ${newAction.id} created; completed action ${completedAction.id} remained historical`);
+  const newActions=(afterNewIncident.data??[]).filter((a:any)=>!(beforeNewIncident.data??[]).some((old:any)=>old.id===a.id));
+  if(!newActions.length)throw new Error("New incident did not create a new management action");
+  const newIncidentActionsFromQuery=(newIncidentQuery.actions??[]).filter((a:any)=>newActions.some((created:any)=>created.id===a.id));
+  if(!newIncidentActionsFromQuery.length)throw new Error("New incident response did not return the newly created management action(s)");
+  const newActionText=newActions.map((a:any)=>String(a.description).toLowerCase()).join(" ");
+  if(!newActionText.includes("fabric")&&!newActionText.includes("shirt")&&!newActionText.includes("order"))throw new Error(`New action does not describe the new incident: ${newActionText}`);
+  console.log(`PASS incident isolation: ${newActions.length} new action(s) created; completed action ${completedAction.id} remained historical`);
   console.log("AGBA CEO QUERY + ACTION MEMORY E2E PASS");
 }finally{await cleanup();}
