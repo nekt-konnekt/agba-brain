@@ -38,7 +38,7 @@ jobs:
         run: |
           deno run --allow-net --allow-env tests/agba-puter-e2e.ts
           deno run --allow-net --allow-env tests/agba-memory-e2e.ts
-          deno run --allow-net --allow-env tests/agba-ceo-query-e2e.ts
+          deno run --allow-net --allow-env tests/agba-ceo-query-reliability-e2e.ts
           deno run --allow-net --allow-env tests/agba-action-memory-e2e.ts
       - name: Run Agba action execution E2E
         env:
