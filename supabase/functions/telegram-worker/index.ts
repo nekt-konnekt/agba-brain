@@ -1,86 +1,17 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const headers = { "Content-Type": "application/json" };
-const json = (x: unknown, status = 200) => new Response(JSON.stringify(x), { status, headers });
-const supabaseUrl = () => Deno.env.get("SUPABASE_URL") || "";
-const serviceKey = () => Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-const MAX_ATTEMPTS = 5;
-
-async function workerSecret(sb: any) {
-  const { data, error } = await sb.rpc("agba_telegram_worker_secret");
-  if (error) throw error;
-  return String(data || "");
-}
-
-async function dispatch(update: any, secret: string) {
-  const response = await fetch(`${supabaseUrl()}/functions/v1/telegram-gateway`, {
-    method: "POST",
-    headers: { ...headers, ...(secret ? { "x-telegram-bot-api-secret-token": secret } : {}) },
-    body: JSON.stringify(update),
-  });
-  const body = await response.text();
-  if (!response.ok) throw new Error(`gateway_http_${response.status}:${body.slice(0, 500)}`);
-}
-
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return json({ ok: true, service: "agba-telegram-worker" });
-  if (!supabaseUrl() || !serviceKey()) return json({ error: "worker_not_configured" }, 500);
-
-  const sb = createClient(supabaseUrl(), serviceKey(), { auth: { autoRefreshToken: false, persistSession: false } });
-  let body: any = {};
-  try { body = await req.json(); } catch {}
-
-  const expected = await workerSecret(sb).catch((error) => {
-    console.error("telegram_worker_secret_lookup_failed", error);
-    return "";
-  });
-  if (!expected || body?.secret !== expected) return json({ error: "forbidden" }, 403);
-
-  await sb.from("agba_telegram_update_inbox").update({ status: "received", last_error: "worker_lease_expired" })
-    .eq("status", "processing")
-    .lt("locked_at", new Date(Date.now() - 2 * 60_000).toISOString());
-
-  const { data: candidates, error: selectError } = await sb.from("agba_telegram_update_inbox")
-    .select("id,telegram_update_id,payload,attempts")
-    .in("status", ["received", "failed"])
-    .order("received_at", { ascending: true })
-    .limit(1);
-  if (selectError) { console.error("telegram_worker_select_failed", selectError); return json({ error: "queue_select_failed" }, 500); }
-
-  const item = candidates?.[0];
-  if (!item) return json({ ok: true, processed: 0 });
-
-  const currentAttempts = Number(item.attempts || 0);
-  if (currentAttempts >= MAX_ATTEMPTS) {
-    await sb.from("agba_telegram_update_inbox").update({ status: "dead_letter", locked_at: null, last_error: `max_attempts_exceeded:${MAX_ATTEMPTS}` }).eq("id", item.id);
-    return json({ ok: true, processed: 0, dead_lettered: true, update_id: item.telegram_update_id, attempts: currentAttempts });
-  }
-
-  const nextAttempt = currentAttempts + 1;
-  const { data: claimed, error: claimError } = await sb.from("agba_telegram_update_inbox").update({
-    status: "processing",
-    attempts: nextAttempt,
-    locked_at: new Date().toISOString(),
-    last_error: null,
-  }).eq("id", item.id).in("status", ["received", "failed"])
-    .select("id,attempts,payload").maybeSingle();
-
-  if (claimError) { console.error("telegram_worker_claim_failed", claimError); return json({ error: "queue_claim_failed" }, 500); }
-  if (!claimed) return json({ ok: true, processed: 0, raced: true });
-
-  try {
-    await dispatch(claimed.payload, Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "");
-    await sb.from("agba_telegram_update_inbox").update({ status: "dispatched", dispatched_at: new Date().toISOString(), locked_at: null, last_error: null }).eq("id", claimed.id);
-    return json({ ok: true, processed: 1, update_id: item.telegram_update_id, attempts: claimed.attempts });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const finalFailure = nextAttempt >= MAX_ATTEMPTS;
-    await sb.from("agba_telegram_update_inbox").update({
-      status: finalFailure ? "dead_letter" : "failed",
-      locked_at: null,
-      last_error: finalFailure ? `max_attempts_exceeded:${MAX_ATTEMPTS};${message}`.slice(0, 2000) : message.slice(0, 2000),
-    }).eq("id", claimed.id);
-    console.error("telegram_worker_dispatch_failed", { updateId: item.telegram_update_id, attempts: nextAttempt, deadLettered: finalFailure, message });
-    return json({ ok: false, processed: 0, update_id: item.telegram_update_id, attempts: nextAttempt, dead_lettered: finalFailure, error: message }, 500);
-  }
-});
+const H={"Content-Type":"application/json"}; const json=(x:unknown,s=200)=>new Response(JSON.stringify(x),{status:s,headers:H});
+const url=()=>Deno.env.get("SUPABASE_URL")||""; const key=()=>Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||""; const bot=()=>Deno.env.get("TELEGRAM_BOT_TOKEN")||"";
+async function secret(sb:any){const {data,error}=await sb.rpc("agba_telegram_worker_secret");if(error)throw error;return String(data||"")}
+async function touchScheduler(sb:any,ok:boolean,errorMsg:string|null=null){const now=new Date();const {data:s,error}=await sb.from("agba_telegram_scheduler").select("id,interval_seconds").eq("name","telegram-worker").maybeSingle();if(error||!s)return;const next=new Date(now.getTime()+Number(s.interval_seconds||5)*1000).toISOString();const patch:any={last_run_at:now.toISOString(),next_run_at:next,last_error:ok?null:(errorMsg||"worker_failed").slice(0,2000),updated_at:now.toISOString(),consecutive_failures:ok?0:1};await sb.from("agba_telegram_scheduler").update(patch).eq("id",s.id)}
+async function tg(method:string,body:any){const r=await fetch(`https://api.telegram.org/bot${bot()}/${method}`,{method:"POST",headers:H,body:JSON.stringify(body)});return r.json()}
+async function typing(update:any){try{const chat=Number(update?.message?.chat?.id);if(Number.isFinite(chat))await tg("sendChatAction",{chat_id:chat,action:"typing"})}catch{}}
+async function send(chat:number,text:string){for(const c of text.match(/[\s\S]{1,3800}/g)||[text]){let r=await tg("sendMessage",{chat_id:chat,text:c,parse_mode:"Markdown"});if(!r?.ok)r=await tg("sendMessage",{chat_id:chat,text:c});if(!r?.ok)throw new Error(`telegram_send_failed:${r?.description||"unknown"}`)}}
+async function enqueue(sb:any,chat:number,text:string,inboxId:string,org:string){const chunks=text.match(/[\s\S]{1,3800}/g)||[text];for(let i=0;i<chunks.length;i++){const row={organization_id:org||null,inbox_id:inboxId,chat_id:String(chat),payload:{chat_id:chat,text:chunks[i],chunk_index:i,chunk_count:chunks.length},status:"pending",attempts:0,max_attempts:5,next_attempt_at:new Date().toISOString()};const {error}=await sb.from("agba_telegram_delivery_outbox").insert(row);if(error&&error.code!=="23505")throw error}}
+async function processDeliveries(sb:any,workerId:string){const {data,error}=await sb.rpc("agba_claim_telegram_delivery",{p_worker_id:workerId,p_lease_seconds:120});if(error)throw error;let sent=0,failed=0;for(const item of data||[]){try{const p=item.payload||{},r=await tg("sendMessage",{chat_id:Number(item.chat_id),text:String(p.text||""),parse_mode:"Markdown"});let rr=r;if(!rr?.ok)rr=await tg("sendMessage",{chat_id:Number(item.chat_id),text:String(p.text||"")});if(!rr?.ok)throw new Error(`telegram_send_failed:${rr?.description||"unknown"}`);const {error:ce}=await sb.rpc("agba_complete_telegram_delivery",{p_id:item.id,p_telegram_message_id:rr?.result?.message_id?Number(rr.result.message_id):null});if(ce)throw ce;sent++}catch(e){failed++;const msg=e instanceof Error?e.message:String(e);const {error:fe}=await sb.rpc("agba_fail_telegram_delivery",{p_id:item.id,p_error:msg.slice(0,2000),p_retry_delay_seconds:15});if(fe)console.error("delivery_fail_record",fe)}}return {sent,failed}}
+function doneQuery(t:string){return t.trim().match(/^(?:mark|set)\s+(.+?)\s+(?:as\s+)?(?:done|complete|completed)$/i)||t.trim().match(/^complete\s+(.+)$/i)||t.trim().match(/^(.+?)\s+(?:is|was|has been)\s+(?:done|complete|completed)$/i)}
+function isOpenActions(t:string){return /^\/actions$/i.test(t)||/^(what are|show|list)\s+(my\s+)?(open\s+)?actions\??$/i.test(t)}
+async function canonical(sb:any,update:any,inboxId:string){const m=update?.message;if(!m?.chat?.id||!m?.text)return false;const text=String(m.text).trim(),chat=Number(m.chat.id),done=doneQuery(text);if(!done&&!isOpenActions(text))return false;const {data:b,error}=await sb.from("agba_telegram_bindings").select("organization_id").eq("chat_id",chat).maybeSingle();if(error)throw error;if(!b)return false;const org=String(b.organization_id);
+if(isOpenActions(text)){const {data,error}=await sb.from("agba_actions").select("description,status,priority,owner_name,deadline").eq("organization_id",org).in("status",["open","in_progress"]).order("priority",{ascending:false}).order("created_at",{ascending:true}).limit(20);if(error)throw error;let answer="Agba 🧠\n\n";if(!data?.length)answer+="✅ No open management actions.";else{answer+="**Open management actions**\n\n";answer+=data.map((a:any,i:number)=>{let line=`${i+1}. ${a.description}`;if(a.owner_name)line+=` · ${a.owner_name}`;if(a.deadline)line+=` · due ${new Date(a.deadline).toLocaleDateString("en-NG")}`;return line}).join("\n")}await enqueue(sb,chat,answer,inboxId,org);return true}
+const q=done![1];const {data:matches,error:re}=await sb.rpc("agba_resolve_management_action",{p_organization_id:org,p_query:q});if(re)throw re;const a=matches?.[0];if(!a){await enqueue(sb,chat,`Agba 🧠\n\nI couldn't find a management action matching \"${q}\".`,inboxId,org);return true}if(a.status==="done"){await enqueue(sb,chat,`Agba 🧠\n\n✅ **Already complete.**\n\n**${a.description}** is already marked done in the authoritative action record.`,inboxId,org);return true}const {data:result,error:ce}=await sb.rpc("agba_complete_management_action",{p_organization_id:org,p_query:q});if(ce)throw ce;const r=result?.[0];if(!r?.success){await enqueue(sb,chat,"Agba 🧠\n\n⚠️ I could not complete that action because database verification did not succeed.",inboxId,org);return true}await enqueue(sb,chat,`Agba 🧠\n\n✅ Done. **${r.action_description}** is now marked complete.`,inboxId,org);return true}
+async function dispatch(update:any,workerSecret:string){const r=await fetch(`${url()}/functions/v1/telegram-gateway`,{method:"POST",headers:{...H,"x-agba-worker-secret":workerSecret},body:JSON.stringify(update)});const body=await r.text();let parsed:any;try{parsed=JSON.parse(body)}catch{}if(!r.ok)throw new Error(`gateway_http_${r.status}:${body.slice(0,500)}`);if(parsed?.ok===false)throw new Error(`gateway_processing_failed:${body.slice(0,500)}`);return parsed}
+Deno.serve(async req=>{if(req.method!=="POST")return json({ok:true,service:"agba-telegram-worker"});if(!url()||!key()||!bot())return json({error:"worker_not_configured"},500);const sb=createClient(url(),key(),{auth:{autoRefreshToken:false,persistSession:false}});let body:any={};try{body=await req.json()}catch{};let expected="";try{expected=await secret(sb)}catch(e){console.error("secret_lookup",e)}if(!expected||body?.secret!==expected)return json({error:"forbidden"},403);const workerId=`telegram-worker-${crypto.randomUUID()}`;try{await touchScheduler(sb,true);const stale=new Date(Date.now()-2*60_000).toISOString();await sb.from("agba_telegram_update_inbox").update({status:"received",locked_at:null,last_error:"worker_lease_expired"}).eq("status","processing").lt("locked_at",stale);let processed=0;const results=[];for(let n=0;n<5;n++){const {data:c,error:e}=await sb.from("agba_telegram_update_inbox").select("id,telegram_update_id,payload,attempts").in("status",["received","failed"]).order("received_at",{ascending:true}).limit(1);if(e)throw e;const item=c?.[0];if(!item)break;const {data:claimed,error:ce}=await sb.from("agba_telegram_update_inbox").update({status:"processing",attempts:Number(item.attempts||0)+1,locked_at:new Date().toISOString(),worker_id:workerId,last_error:null}).eq("id",item.id).in("status",["received","failed"]).select("id,telegram_update_id,payload,attempts").maybeSingle();if(ce)throw ce;if(!claimed)continue;try{await typing(claimed.payload);const handled=await canonical(sb,claimed.payload,claimed.id);if(!handled){const response=await dispatch(claimed.payload,expected);const chat=Number(response?.chat_id||claimed.payload?.message?.chat?.id);const answer=String(response?.answer||"");if(!chat||!answer)throw new Error("gateway_missing_delivery_payload");const orgRes=await sb.from("agba_telegram_bindings").select("organization_id").eq("chat_id",chat).maybeSingle();if(orgRes.error)throw orgRes.error;await enqueue(sb,chat,answer,claimed.id,String(orgRes.data?.organization_id||""))}await sb.from("agba_telegram_update_inbox").update({status:"dispatched",dispatched_at:new Date().toISOString(),locked_at:null,last_error:null,completed_at:new Date().toISOString()}).eq("id",claimed.id);processed++;results.push({update_id:claimed.telegram_update_id,status:handled?"queued_action_response":"queued_ai_response",attempts:claimed.attempts})}catch(err){const msg=err instanceof Error?err.message:String(err),attempts=Number(claimed.attempts||1),terminal=attempts>=5;await sb.from("agba_telegram_update_inbox").update({status:terminal?"dead":"failed",locked_at:null,last_error:msg.slice(0,2000)}).eq("id",claimed.id);results.push({update_id:claimed.telegram_update_id,status:terminal?"dead":"failed",attempts,error:msg.slice(0,500)});if(!terminal)break}}const delivery=await processDeliveries(sb,workerId);await touchScheduler(sb,true);return json({ok:true,processed,delivery,results})}catch(err){const msg=err instanceof Error?err.message:String(err);await touchScheduler(sb,false,msg);console.error("worker_failed",msg);return json({ok:false,error:"worker_failed"},500)}});
