@@ -30,10 +30,6 @@ async function rpc(name: string, body: Record<string, unknown>) {
   });
 }
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message);
-}
-
 function assertEq(actual: unknown, expected: unknown, message: string) {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
@@ -41,8 +37,10 @@ function assertEq(actual: unknown, expected: unknown, message: string) {
 }
 
 const updateId = Number(`${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`);
+const testChatId = `9${Date.now()}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
 const workerA = `reliability-a-${crypto.randomUUID()}`;
 const workerB = `reliability-b-${crypto.randomUUID()}`;
+const oldestCreatedAt = new Date(0).toISOString();
 let inboxId: string | undefined;
 let deliveryId: string | undefined;
 
@@ -55,11 +53,12 @@ try {
     body: JSON.stringify({
       telegram_update_id: updateId,
       payload: { reliability_test: true, update_id: updateId },
-      chat_id: 999999999,
+      chat_id: Number(testChatId),
       status: "received",
       attempts: 0,
       max_attempts: 3,
       next_attempt_at: new Date().toISOString(),
+      created_at: oldestCreatedAt,
     }),
   });
   inboxId = inserted[0].id;
@@ -136,12 +135,13 @@ try {
     headers: { Prefer: "return=representation" },
     body: JSON.stringify({
       inbox_id: inboxId,
-      chat_id: "999999999",
+      chat_id: testChatId,
       payload: { text: "reliability test", test: true },
       status: "pending",
       attempts: 0,
       max_attempts: 3,
       next_attempt_at: new Date().toISOString(),
+      created_at: oldestCreatedAt,
     }),
   });
   deliveryId = deliveryInserted[0].id;
