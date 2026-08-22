@@ -1,1 +1,210 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Create your Agba account</title><meta name="description" content="Create your Agba account and start setting up your company workspace."><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/onboarding-styles.css"><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head><body><main class="onboarding-page"><div class="onboarding-shell"><a class="brand onboarding-brand" href="/"><div class="brand-mark">🧠</div><div><strong>Agba</strong><span>Operating brain</span></div></a><div class="onboarding-progress" aria-label="Onboarding progress"><i class="active"></i><i class="active"></i><i></i><i></i></div><section class="onboarding-card"><div class="eyebrow">1 OF 3 · ACCOUNT</div><h1>Let's get you set up.</h1><p class="lead">Create your Agba account. We'll use it to keep your company workspace secure.</p><form id="form" novalidate><label for="email">Email<input id="email" type="email" autocomplete="email" required placeholder="you@company.com"></label><label for="password">Password<div class="password-wrap"><input id="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters"><button type="button" id="togglePassword" class="password-toggle" aria-label="Show password" aria-pressed="false">◉</button></div><span class="field-hint">Use at least 8 characters.</span></label><button id="submitBtn" class="primary onboarding-main-btn" type="submit">Continue</button></form><p class="small-note">Already have an account? <a href="/signin">Sign in</a></p><div id="error" class="form-error" role="alert" aria-live="polite"></div><div id="success" class="form-success" role="status" aria-live="polite"></div></section></div></main><script>const sb=window.supabase.createClient('https://iijhsdaqaqywzpavdonn.supabase.co','sb_publishable_wqJVbxGLbvWgrrXmhsLjKg_ks8Sy9aS');const form=document.getElementById('form'),email=document.getElementById('email'),password=document.getElementById('password'),submitBtn=document.getElementById('submitBtn'),error=document.getElementById('error'),success=document.getElementById('success'),toggle=document.getElementById('togglePassword');let busy=false;toggle.onclick=()=>{const showing=password.type==='text';password.type=showing?'password':'text';toggle.textContent=showing?'◉':'◉';toggle.setAttribute('aria-label',showing?'Show password':'Hide password');toggle.setAttribute('aria-pressed',String(!showing))};function showError(message){error.textContent=message;success.textContent=''}function friendlyError(err){const msg=(err&&err.message)||'';const lower=msg.toLowerCase();if(lower.includes('rate limit')||lower.includes('only request this after')||lower.includes('too many requests'))return'Agba has temporarily rate-limited signup emails. Please wait about a minute before trying again. If this email already has an Agba account, use Sign in instead.';if(lower.includes('already registered')||lower.includes('already been registered')||lower.includes('user already exists'))return'This email is already registered. Use Sign in to continue.';if(lower.includes('password'))return msg;return msg||'We could not create the account. Please try again.'}form.onsubmit=async e=>{e.preventDefault();if(busy)return;showError('');const em=email.value.trim(),pw=password.value;if(!em||!email.checkValidity()){showError('Enter a valid email address.');return}if(pw.length<8){showError('Your password must be at least 8 characters.');return}busy=true;submitBtn.disabled=true;submitBtn.textContent='Creating account…';const{data,error:err}=await sb.auth.signUp({email:em,password:pw,options:{emailRedirectTo:'https://agba.work/onboarding',data:{onboarding:true}}});if(err){showError(friendlyError(err));busy=false;submitBtn.disabled=false;submitBtn.textContent='Continue';return}if(data.session){location.href='/onboarding';return}success.textContent='Account created. Check your email to confirm it, then Agba will bring you back to onboarding.';submitBtn.textContent='Confirmation email sent';};</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Create your Agba account</title>
+  <meta name="description" content="Create your Agba account and start setting up your company workspace.">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/onboarding-styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <main class="onboarding-page">
+    <div class="onboarding-shell">
+      <a class="brand onboarding-brand" href="/">
+        <div class="brand-mark">🧠</div>
+        <div><strong>Agba</strong><span>Operating brain</span></div>
+      </a>
+
+      <div class="onboarding-progress" aria-label="Onboarding progress">
+        <i class="active"></i><i class="active"></i><i></i><i></i>
+      </div>
+
+      <section class="onboarding-card">
+        <div class="eyebrow">1 OF 3 · ACCOUNT</div>
+        <h1>Let's get you set up.</h1>
+        <p class="lead">Create your Agba account. We'll use it to keep your company workspace secure.</p>
+
+        <form id="form" novalidate>
+          <label for="email">
+            Email
+            <input id="email" type="email" autocomplete="email" required placeholder="you@company.com">
+          </label>
+
+          <label for="password">
+            Password
+            <div class="password-wrap">
+              <input id="password" type="password" autocomplete="new-password" minlength="8" required placeholder="At least 8 characters">
+              <button type="button" id="togglePassword" class="password-toggle" aria-label="Show password" aria-pressed="false"></button>
+            </div>
+            <span class="field-hint">Use at least 8 characters.</span>
+          </label>
+
+          <button id="submitBtn" class="primary onboarding-main-btn" type="submit">Continue</button>
+        </form>
+
+        <p class="small-note">Already have an account? <a href="/signin">Sign in</a></p>
+        <div id="error" class="form-error" role="alert" aria-live="polite"></div>
+        <div id="success" class="form-success" role="status" aria-live="polite"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const sb = window.supabase.createClient(
+      'https://iijhsdaqaqywzpavdonn.supabase.co',
+      'sb_publishable_wqJVbxGLbvWgrrXmhsLjKg_ks8Sy9aS'
+    );
+
+    const form = document.getElementById('form');
+    const email = document.getElementById('email');
+    const password = document.getElementById('password');
+    const submitBtn = document.getElementById('submitBtn');
+    const error = document.getElementById('error');
+    const success = document.getElementById('success');
+    const toggle = document.getElementById('togglePassword');
+
+    const eyeIcon = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M2.1 12s3.5-6 9.9-6 9.9 6 9.9 6-3.5 6-9.9 6-9.9-6-9.9-6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <circle cx="12" cy="12" r="2.7" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      </svg>`;
+
+    const eyeOffIcon = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M3 3l18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M9.9 5.2A10.8 10.8 0 0 1 12 5c6.4 0 9.9 7 9.9 7a17.7 17.7 0 0 1-3.4 4.1M6.2 6.3C3.7 8.2 2.1 12 2.1 12s3.5 7 9.9 7a10.9 10.9 0 0 0 4.1-.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M9.8 9.8a3 3 0 0 0 4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>`;
+
+    toggle.innerHTML = eyeIcon;
+    let busy = false;
+    let retryTimer = null;
+
+    function showError(message) {
+      error.textContent = message;
+      success.textContent = '';
+    }
+
+    function showSuccess(message) {
+      success.textContent = message;
+      error.textContent = '';
+    }
+
+    function setToggleState(showing) {
+      password.type = showing ? 'text' : 'password';
+      toggle.innerHTML = showing ? eyeOffIcon : eyeIcon;
+      toggle.setAttribute('aria-label', showing ? 'Hide password' : 'Show password');
+      toggle.setAttribute('aria-pressed', String(showing));
+    }
+
+    toggle.onclick = () => setToggleState(password.type !== 'text');
+
+    function startRetryCooldown(seconds = 60) {
+      clearInterval(retryTimer);
+      let remaining = seconds;
+      submitBtn.disabled = true;
+      submitBtn.textContent = `Try again in ${remaining}s`;
+
+      retryTimer = setInterval(() => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(retryTimer);
+          retryTimer = null;
+          if (!busy) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Continue';
+          }
+          return;
+        }
+        submitBtn.textContent = `Try again in ${remaining}s`;
+      }, 1000);
+    }
+
+    function friendlyError(err) {
+      const msg = (err && err.message) || '';
+      const lower = msg.toLowerCase();
+
+      if (lower.includes('rate limit') || lower.includes('only request this after') || lower.includes('too many requests')) {
+        return {
+          message: 'Signup email delivery is temporarily rate-limited by Supabase. Wait 60 seconds before retrying. If this keeps happening, Agba needs a custom SMTP provider instead of Supabase’s shared email service.',
+          cooldown: true
+        };
+      }
+
+      if (lower.includes('already registered') || lower.includes('already been registered') || lower.includes('user already exists')) {
+        return {
+          message: 'This email is already registered. Use Sign in to continue.',
+          cooldown: false
+        };
+      }
+
+      if (lower.includes('password')) {
+        return { message: msg, cooldown: false };
+      }
+
+      return {
+        message: msg || 'We could not create the account. Please try again.',
+        cooldown: false
+      };
+    }
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (busy) return;
+
+      showError('');
+      const em = email.value.trim();
+      const pw = password.value;
+
+      if (!em || !email.checkValidity()) {
+        showError('Enter a valid email address.');
+        return;
+      }
+
+      if (pw.length < 8) {
+        showError('Your password must be at least 8 characters.');
+        return;
+      }
+
+      busy = true;
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account…';
+
+      const { data, error: err } = await sb.auth.signUp({
+        email: em,
+        password: pw,
+        options: {
+          emailRedirectTo: 'https://agba.work/onboarding',
+          data: { onboarding: true }
+        }
+      });
+
+      if (err) {
+        const result = friendlyError(err);
+        showError(result.message);
+        busy = false;
+
+        if (result.cooldown) {
+          startRetryCooldown(60);
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+        }
+        return;
+      }
+
+      if (data.session) {
+        location.href = '/onboarding';
+        return;
+      }
+
+      busy = false;
+      showSuccess('Account created. Check your email to confirm it, then Agba will bring you back to onboarding.');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Confirmation email sent';
+    };
+  </script>
+</body>
+</html>
