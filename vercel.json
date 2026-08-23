@@ -26,6 +26,7 @@
     { "source": "/for-ceos", "destination": "/web/for-ceos.html" },
     { "source": "/app.js", "destination": "/web/app.js" },
     { "source": "/styles.css", "destination": "/web/styles.css" },
+    { "source": "/design-system.css", "destination": "/web/design-system.css" },
     { "source": "/onboarding-styles.css", "destination": "/web/onboarding-styles.css" },
     { "source": "/agba-logo.svg", "destination": "/web/agba-logo.svg" }
   ]
