@@ -1,6 +1,16 @@
 {
+  "headers": [
+    {
+      "source": "/(signup|signup/account|signin|forgot-password|reset-password|onboarding|onboarding/telegram|office|ask|actions|departments|decisions)(/.*)?",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
+      ]
+    }
+  ],
   "rewrites": [
     { "source": "/", "destination": "/web/index.html" },
+    { "source": "/robots.txt", "destination": "/web/robots.txt" },
+    { "source": "/sitemap.xml", "destination": "/web/sitemap.xml" },
     { "source": "/signup", "destination": "/web/signup.html" },
     { "source": "/signup/account", "destination": "/web/signup-account.html" },
     { "source": "/signin", "destination": "/web/signin.html" },
