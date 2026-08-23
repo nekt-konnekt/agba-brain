@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+Disallow: /signup
+Disallow: /signup/
+Disallow: /signin
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /onboarding
+Disallow: /onboarding/
+Disallow: /office
+Disallow: /ask
+Disallow: /actions
+Disallow: /departments
+Disallow: /decisions
+
+Sitemap: https://agba.work/sitemap.xml
