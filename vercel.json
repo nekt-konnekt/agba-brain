@@ -13,6 +13,7 @@
     { "source": "/actions", "destination": "/web/office.html" },
     { "source": "/departments", "destination": "/web/office.html" },
     { "source": "/decisions", "destination": "/web/office.html" },
+    { "source": "/for-ceos", "destination": "/web/for-ceos.html" },
     { "source": "/app.js", "destination": "/web/app.js" },
     { "source": "/styles.css", "destination": "/web/styles.css" },
     { "source": "/onboarding-styles.css", "destination": "/web/onboarding-styles.css" },
