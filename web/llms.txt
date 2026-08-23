@@ -1,0 +1,31 @@
+# Agba
+
+> Agba is an AI operating brain for businesses.
+
+## What Agba is
+Agba connects business activity into a governed operating picture. It turns reports and operational records into company memory, identifies what matters, and helps people decide and act.
+
+## Who Agba is for
+Agba is designed for CEOs and department heads who need a reliable operating picture of the business.
+
+## What Agba does
+- Understands business reports and operational activity.
+- Connects signals across departments and business functions.
+- Maintains governed company memory.
+- Surfaces risks, priorities, changes, exceptions and unresolved issues.
+- Answers questions using company context and evidence.
+- Tracks decisions and actions.
+- Produces executive-level business briefings.
+
+## What makes Agba different
+Agba is not positioned as a generic chatbot or generic analytics dashboard. Its core operating loop is: Report → Normalize → Store → Understand → Connect → Reason → Brief → Act → Learn.
+
+## Security and access
+Authorization is enforced by PostgreSQL and application services. The AI model does not decide whether a user is allowed to see a record. CEO and Department Head access is governed by role and company policy.
+
+## Public pages
+- https://agba.work/
+- https://agba.work/for-ceos
+
+## Canonical description
+Agba is the AI operating brain for your business. It connects reports, orders, payments, customers, suppliers, issues and decisions into one operating picture so you know what matters and what to do next.
