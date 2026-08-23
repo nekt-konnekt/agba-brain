@@ -4,6 +4,8 @@
     { "source": "/signup", "destination": "/web/signup.html" },
     { "source": "/signup/account", "destination": "/web/signup-account.html" },
     { "source": "/signin", "destination": "/web/signin.html" },
+    { "source": "/forgot-password", "destination": "/web/forgot-password.html" },
+    { "source": "/reset-password", "destination": "/web/reset-password.html" },
     { "source": "/onboarding", "destination": "/web/onboarding.html" },
     { "source": "/onboarding/telegram", "destination": "/web/onboarding-telegram.html" },
     { "source": "/office", "destination": "/web/office.html" },
