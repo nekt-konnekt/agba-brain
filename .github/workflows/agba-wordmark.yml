@@ -1,0 +1,55 @@
+name: Apply Agba wordmark
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  wordmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply canonical agba. wordmark
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          web = Path('web')
+          for path in web.glob('*.html'):
+              text = path.read_text(encoding='utf-8')
+              original = text
+              text = text.replace('<div class="brand-mark">🧠</div>', '<div class="brand-mark" aria-label="agba."><span>agba</span><i aria-hidden="true">.</i></div>')
+              text = text.replace('<div class="brand-mark">Agba</div>', '<div class="brand-mark" aria-label="agba."><span>agba</span><i aria-hidden="true">.</i></div>')
+              path.write_text(text, encoding='utf-8')
+
+          rules = '''\n/* Canonical Agba wordmark: agba. with the signature acid-lime dot. */\n.brand-mark{width:auto!important;height:auto!important;min-width:0!important;border-radius:0!important;background:none!important;color:#F7F7F3!important;font-family:'Space Grotesk',sans-serif!important;font-size:24px!important;font-weight:650!important;letter-spacing:-.075em!important;line-height:1!important;display:inline-flex!important;align-items:baseline!important;gap:0!important;box-shadow:none!important;overflow:visible!important}\n.brand-mark span{color:#F7F7F3!important}\n.brand-mark i{font-style:normal!important;color:#C6F52D!important}\n.brand-mark img,.brand-mark svg{display:none!important}\n'''
+          for css_name in ['styles.css','onboarding-styles.css']:
+              css = web / css_name
+              text = css.read_text(encoding='utf-8')
+              if 'Canonical Agba wordmark' not in text:
+                  css.write_text(text + rules, encoding='utf-8')
+
+          # Remove legacy brain wording from visible web HTML branding.
+          for path in web.glob('*.html'):
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('Agba / Operating brain', 'agba.')
+              path.write_text(text, encoding='utf-8')
+
+      - name: Commit generated brand updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web
+          if git diff --cached --quiet; then
+            echo "No wordmark changes needed"
+            exit 0
+          fi
+          git commit -m "Apply canonical agba. wordmark across web build"
+          git push
