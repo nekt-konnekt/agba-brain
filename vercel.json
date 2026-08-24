@@ -11,6 +11,8 @@
     { "source": "/", "destination": "/web/index.html" },
     { "source": "/robots.txt", "destination": "/web/robots.txt" },
     { "source": "/sitemap.xml", "destination": "/web/sitemap.xml" },
+    { "source": "/favicon.ico", "destination": "/web/agba-logo.svg" },
+    { "source": "/favicon.svg", "destination": "/web/agba-logo.svg" },
     { "source": "/signup", "destination": "/web/signup.html" },
     { "source": "/signup/account", "destination": "/web/signup-account.html" },
     { "source": "/signin", "destination": "/web/signin.html" },
