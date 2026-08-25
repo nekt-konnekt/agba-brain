@@ -8,6 +8,8 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/mcp", "destination": "https://iijhsdaqaqywzpavdonn.supabase.co/functions/v1/agba-mcp" },
+    { "source": "/mcp", "destination": "https://iijhsdaqaqywzpavdonn.supabase.co/functions/v1/agba-mcp" },
     { "source": "/", "destination": "/web/index.html" },
     { "source": "/robots.txt", "destination": "/web/robots.txt" },
     { "source": "/sitemap.xml", "destination": "/web/sitemap.xml" },
