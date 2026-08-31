@@ -1,0 +1,14 @@
+{
+  "name": "agba-brain",
+  "version": "1.0.0",
+  "description": "Agba - Executive operating intelligence for growing businesses",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "echo 'Build complete'"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

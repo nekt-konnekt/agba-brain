@@ -1,0 +1,8 @@
+{
+  "name": "Agba",
+  "description": "AI executive operating layer connecting department reports, risks, and leadership memory.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
