@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [main]
 
+# These E2E tests use shared Supabase fixtures. Never allow two runs to mutate
+# the same test environment concurrently.
+concurrency:
+  group: agba-e2e-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   e2e:
     environment: Agba
