@@ -12,7 +12,19 @@ async function workerSecret(sb: any) {
   return String(data || "");
 }
 
-async function dispatch(update: any, secret: string) {
+async function dispatch(update: any, secret: string, inboxId: string) {
+  const actionResponse = await fetch(`${supabaseUrl()}/functions/v1/action-router`, {
+    method: "POST",
+    headers: { ...headers, ...(secret ? { "x-agba-worker-secret": secret } : {}) },
+    body: JSON.stringify({ ...update, __agba_inbox_id: inboxId }),
+  });
+  const actionBody = await actionResponse.text();
+  if (!actionResponse.ok) throw new Error(`action_router_http_${actionResponse.status}:${actionBody.slice(0, 500)}`);
+  try {
+    const parsed = JSON.parse(actionBody);
+    if (parsed?.handled) return;
+  } catch {}
+
   const response = await fetch(`${supabaseUrl()}/functions/v1/telegram-gateway`, {
     method: "POST",
     headers: { ...headers, ...(secret ? { "x-telegram-bot-api-secret-token": secret } : {}) },
@@ -69,7 +81,7 @@ Deno.serve(async (req) => {
   if (!claimed) return json({ ok: true, processed: 0, raced: true });
 
   try {
-    await dispatch(claimed.payload, expected);
+    await dispatch(claimed.payload, expected, claimed.id);
     await sb.from("agba_telegram_update_inbox").update({ status: "dispatched", dispatched_at: new Date().toISOString(), locked_at: null, last_error: null }).eq("id", claimed.id);
     return json({ ok: true, processed: 1, update_id: item.telegram_update_id, attempts: claimed.attempts });
   } catch (error) {
