@@ -7,7 +7,7 @@ const dashscopeKey=Deno.env.get("DASHSCOPE_API_KEY");
 if(!url||!anon||!serviceRole||!dashscopeKey)throw new Error("Set Supabase and DashScope environment variables");
 
 const admin=createClient(url,serviceRole,{auth:{autoRefreshToken:false,persistSession:false}});
-const email=`agba-ceo-query-reliability-${Date.now()}@gmail.com`;
+const email=`agba-ceo-query-reliability-${Date.now()}@example.test`;
 const password=`AgbaCEOQueryReliability-${crypto.randomUUID()}-X9!`;
 const {data:created,error:createError}=await admin.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{full_name:"Agba CEO Query Reliability E2E"}});
 if(createError||!created.user)throw new Error(`CEO creation failed: ${createError?.message??"no user"}`);
@@ -23,7 +23,7 @@ try{
   const headers={Authorization:`Bearer ${auth.session.access_token}`,apikey:anon,"Content-Type":"application/json"};
   const base=`${url}/functions/v1`;
 
-  const setup=await expect("company setup",await fetch(`${base}/company-setup`,{method:"POST",headers,body:JSON.stringify({company:{name:`Agba CEO Query Reliability ${Date.now()}`,slug:`agba-ceo-query-reliability-${Date.now()}`,timezone:"Africa/Lagos",currency_code:"NGN"},ceo:{full_name:"Agba CEO Query Reliability E2E"},departments:[{name:"Sales",slug:"sales",head:{full_name:"Sales Head",email:`ceo-query-rel-sales-${Date.now()}@gmail.com`}},{name:"Finance",slug:"finance",head:{full_name:"Finance Head",email:`ceo-query-rel-finance-${Date.now()}@gmail.com`}}]})}),201);
+  const setup=await expect("company setup",await fetch(`${base}/company-setup`,{method:"POST",headers,body:JSON.stringify({company:{name:`Agba CEO Query Reliability ${Date.now()}`,slug:`agba-ceo-query-reliability-${Date.now()}`,timezone:"Africa/Lagos",currency_code:"NGN"},ceo:{full_name:"Agba CEO Query Reliability E2E"},departments:[{name:"Sales",slug:"sales",head:{full_name:"Sales Head",email:`ceo-query-rel-sales-${Date.now()}@example.test`}},{name:"Finance",slug:"finance",head:{full_name:"Finance Head",email:`ceo-query-rel-finance-${Date.now()}@example.test`}}]})}),201);
   organizationId=setup.organization.id;
   const departments=Object.fromEntries(setup.departments.map((d:any)=>[d.slug,d.id]));
   console.log("PASS company setup: CEO query reliability company");
