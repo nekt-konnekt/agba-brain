@@ -1,8 +1,6 @@
 {
   "name": "Agba",
-  "description": "AI executive operating layer connecting department reports, risks, and leadership memory.",
+  "description": "AI executive operating layer connecting reports, remembering decisions, and giving leadership the executive picture.",
   "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
