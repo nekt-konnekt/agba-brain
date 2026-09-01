@@ -7,7 +7,7 @@ const dashscopeKey = Deno.env.get("DASHSCOPE_API_KEY");
 if (!url || !anon || !serviceRole || !dashscopeKey) throw new Error("Set Supabase and DashScope environment variables");
 
 const admin = createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false } });
-const email = `agba-memory-e2e-${Date.now()}@gmail.com`;
+const email = `agba-memory-e2e-${Date.now()}@example.test`;
 const password = `AgbaMemoryE2E-${crypto.randomUUID()}-X9!`;
 const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: "Agba Memory E2E CEO" } });
 if (createError || !created.user) throw new Error(`CEO creation failed: ${createError?.message ?? "no user"}`);
@@ -38,10 +38,10 @@ try {
     company: { name: `Agba Longitudinal Memory E2E ${Date.now()}`, slug: `agba-longitudinal-memory-e2e-${Date.now()}`, timezone: "Africa/Lagos", currency_code: "NGN" },
     ceo: { full_name: "Agba Memory E2E CEO" },
     departments: [
-      { name: "Sales", slug: "sales", head: { full_name: "Sales Head", email: `memory-sales-${Date.now()}@gmail.com` } },
-      { name: "Production", slug: "production", head: { full_name: "Production Head", email: `memory-production-${Date.now()}@gmail.com` } },
-      { name: "Finance", slug: "finance", head: { full_name: "Finance Head", email: `memory-finance-${Date.now()}@gmail.com` } },
-      { name: "Operations", slug: "operations", head: { full_name: "Operations Head", email: `memory-operations-${Date.now()}@gmail.com` } },
+      { name: "Sales", slug: "sales", head: { full_name: "Sales Head", email: `memory-sales-${Date.now()}@example.test` } },
+      { name: "Production", slug: "production", head: { full_name: "Production Head", email: `memory-production-${Date.now()}@example.test` } },
+      { name: "Finance", slug: "finance", head: { full_name: "Finance Head", email: `memory-finance-${Date.now()}@example.test` } },
+      { name: "Operations", slug: "operations", head: { full_name: "Operations Head", email: `memory-operations-${Date.now()}@example.test` } },
     ]
   }) }), 201);
   organizationId = setup.organization.id;
