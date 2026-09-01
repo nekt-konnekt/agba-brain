@@ -54,11 +54,20 @@ async function canonical(sb: any, update: any, inbox: string) {
   if (create) return createAction(sb, org, String(b.agba_user_id), chat, inbox, create);
   if (isOpen(text)) { const data = await openActions(sb, org); const answer = data.length ? `Agba 🧠\n\n**Open management actions**\n\n${data.map((a: any, i: number) => `${i + 1}. ${a.description} · ${a.status}${a.owner_name ? ` · ${a.owner_name}` : " · unassigned"}${a.deadline ? ` · due ${new Date(a.deadline).toLocaleDateString("en-NG")}` : ""}`).join("\n")}` : "Agba 🧠\n\nYou currently have no open management actions."; await enqueue(sb, chat, answer, inbox, org); return true; }
   const done = doneQuery(text); if (!done) return false;
-  const { data: matches, error: re } = await sb.rpc("agba_resolve_management_action", { p_organization_id: org, p_query: done[1] }); if (re) throw re;
-  const a = matches?.[0]; if (!a) { await enqueue(sb, chat, `Agba 🧠\n\nI couldn't find an open management action matching "${done[1]}".`, inbox, org); return true; }
+  const rows = await openActions(sb, org);
+  const needle = done[1];
+  const ranked = rows.map((a: any) => ({ a, score: sim(needle, a.description) })).sort((x: any, y: any) => y.score - x.score);
+  const best = ranked[0];
+  const second = ranked[1];
+  const exact = rows.find((a: any) => norm(a.description) === norm(needle));
+  const contains = rows.find((a: any) => norm(a.description).includes(norm(needle)) || norm(needle).includes(norm(a.description)));
+  const a = exact || contains || (best && best.score >= .20 && (!second || best.score - second.score >= .08) ? best.a : null);
+  if (!a) { await enqueue(sb, chat, `Agba 🧠\n\nI couldn't find an open management action matching "${needle}".`, inbox, org); return true; }
   const { data: result, error: ce } = await sb.rpc("agba_complete_management_action", { p_organization_id: org, p_query: a.description }); if (ce) throw ce;
   const r = result?.[0]; if (!r?.success) { await enqueue(sb, chat, "Agba 🧠\n\nI could not complete that action because database verification did not succeed.", inbox, org); return true; }
-  await enqueue(sb, chat, `Agba 🧠\n\nDone. **${r.action_description}** is now marked complete.`, inbox, org); return true;
+  const { data: verify, error: ve } = await sb.from("agba_actions").select("id,status,description").eq("id", a.id).maybeSingle(); if (ve) throw ve;
+  if (verify?.status !== "done") { await enqueue(sb, chat, "Agba 🧠\n\nI could not verify that the action was completed. I have not reported it as done.", inbox, org); return true; }
+  await enqueue(sb, chat, `Agba 🧠\n\nDone. **${verify.description}** is now marked complete.`, inbox, org); return true;
 }
 
 async function dispatch(update: any, s: string) { const r = await fetch(`${sbUrl()}/functions/v1/telegram-gateway`, { method: "POST", headers: { ...H, "x-agba-worker-secret": s }, body: JSON.stringify(update) }); const body = await r.text(); let p: any; try { p = JSON.parse(body); } catch {} if (!r.ok || p?.ok === false) throw Error(`gateway_failed:${body.slice(0, 500)}`); return p; }
