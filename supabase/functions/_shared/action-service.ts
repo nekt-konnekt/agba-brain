@@ -13,6 +13,11 @@ export type ActionMutation = {
   metadata?: Record<string, unknown>;
 };
 
+function normalizeOwnerName(value: string | null | undefined) {
+  const v = String(value ?? "").trim().replace(/^for\s+/i, "");
+  return v || null;
+}
+
 export async function mutateAction(db: SupabaseClient, input: ActionMutation) {
   const { data, error } = await db.rpc("agba_mutate_action", {
     p_operation: input.operation,
@@ -20,7 +25,7 @@ export async function mutateAction(db: SupabaseClient, input: ActionMutation) {
     p_organization_id: input.organizationId,
     p_created_by: input.actorId ?? null,
     p_description: input.description ?? null,
-    p_owner_name: input.ownerName ?? null,
+    p_owner_name: normalizeOwnerName(input.ownerName),
     p_deadline: input.deadline ?? null,
     p_status: input.status ?? null,
     p_priority: input.priority ?? null,
