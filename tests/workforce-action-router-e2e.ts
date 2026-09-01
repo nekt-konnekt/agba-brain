@@ -16,7 +16,7 @@ const chat=Number(bindings[0].chat_id),org=bindings[0].organization_id,marker=`W
 let inboxId:string|undefined;let actionId:string|undefined;
 try{
   const updateId=Number(`${Date.now()}${Math.floor(Math.random()*1000).toString().padStart(3,"0")}`);
-  const inserted=await rest("/rest/v1/agba_telegram_update_inbox?select=id,status",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({telegram_update_id:updateId,payload:{message:{chat:{id:chat},text:`Create an action for Chinedu to follow up with supplier ${marker}, due tomorrow and make it high priority.`}},chat_id:chat,status:"received",attempts:0,max_attempts:3,next_attempt_at:new Date().toISOString()})});
+  const inserted=await rest("/rest/v1/agba_telegram_update_inbox?select=id,status",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({telegram_update_id:updateId,payload:{message:{chat:{id:chat},text:`Create an action for Chinedu to follow up with supplier ${marker}, due tomorrow and make it high priority.`}},chat_id:chat,status:"processing",attempts:1,max_attempts:3,locked_at:new Date().toISOString(),next_attempt_at:new Date().toISOString()})});
   inboxId=inserted[0].id;
   console.log("WORKFORCE ACTION ROUTER E2E");
   const createText=`Create an action for Chinedu to follow up with supplier ${marker}, due tomorrow and make it high priority.`;
