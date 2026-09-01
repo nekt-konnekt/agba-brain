@@ -1,10 +1,12 @@
 # Agba Build Status
 
-Last reviewed: 2026-08-20
+Last reviewed: 2026-09-01
 
 ## Current state
 
 Agba has a working backend operating loop through Telegram. The system is no longer a simple chatbot: it has organization identity, governed reports, company state, grounded CEO queries, persistent management actions, action lifecycle state, and provenance.
+
+The inbound Telegram path is now durable: `telegram-receiver` persists and dedupes every update before any AI processing begins, `telegram-worker` processes the queue with retry and dead-letter handling, and only then dispatches to `action-router` (workforce commands) or `telegram-gateway` (reports, CEO Q&A, reasoning). CEOs can now self-connect their Telegram account directly from their own invitation link, without a separate onboarding step.
 
 ## Verified working
 
@@ -43,13 +45,11 @@ Agba has a working backend operating loop through Telegram. The system is no lon
 
 ### Reliability
 
-The Telegram gateway has previously returned intermittent 403 responses and delayed processing. This proves the current synchronous webhook path is not yet production-grade.
-
-The system needs durable event ingestion and asynchronous processing before live production use.
+Durable ingestion (receiver → inbox → worker → dispatch) is built. Still needed before this is called production-hardened: end-to-end verification against the exit criteria below with real Telegram traffic, and observability/alerting on the dead-letter queue.
 
 ### Frontend
 
-There is currently no Agba web frontend. References to an Agba login or web app must be treated as future architecture, not current functionality.
+A static web tree exists (marketing pages, auth pages, onboarding, and an `office.html` shell) served by `server.js`/Vercel. It is not yet wired to live Supabase auth and data — that wiring is the current frontend gap, not the absence of pages.
 
 Telegram is the active interface for the current build.
 
