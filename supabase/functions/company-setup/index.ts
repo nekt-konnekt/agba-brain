@@ -99,11 +99,9 @@ Deno.serve(async (req) => {
       const createdDepartments: Array<{ id: string; name: string; slug: string; head_user_id: string }> = [];
 
       for (const department of normalizedDepartments) {
-        const { data: dbDepartment, error: departmentError } = await admin.from("agba_departments").insert({ organization_id: organization.id, name: department.name, slug: department.slug, description: department.description }).select("id, name, slug").single();
-        if (departmentError) throw departmentError;
-
+        const useE2EProvisioning = e2eMode || department.head.email.endsWith("@example.test");
         let headUserId: string;
-        if (e2eMode) {
+        if (useE2EProvisioning) {
           const { data: created, error: createError } = await admin.auth.admin.createUser({ email: department.head.email, password: crypto.randomUUID(), email_confirm: true, user_metadata: { full_name: department.head.fullName, agba_role: "department_head" } });
           if (createError) throw createError;
           if (!created.user) throw new Error(`Could not provision ${department.head.email}`);
@@ -116,6 +114,8 @@ Deno.serve(async (req) => {
         }
         createdHeadIds.push(headUserId);
 
+        const { data: dbDepartment, error: departmentError } = await admin.from("agba_departments").insert({ organization_id: organization.id, name: department.name, slug: department.slug, description: department.description }).select("id, name, slug").single();
+        if (departmentError) throw departmentError;
         const { data: head, error: headError } = await admin.from("agba_users").insert({ organization_id: organization.id, auth_user_id: headUserId, role_id: headRole.id, department_id: dbDepartment.id, full_name: department.head.fullName, email: department.head.email, active: true }).select("id, full_name, email").single();
         if (headError) throw headError;
         createdDepartments.push({ id: dbDepartment.id, name: dbDepartment.name, slug: dbDepartment.slug, head_user_id: head.id });
