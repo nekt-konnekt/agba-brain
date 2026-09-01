@@ -7,8 +7,6 @@ on:
   pull_request:
     branches: [main]
 
-# These E2E tests use shared Supabase fixtures. Never allow two runs to mutate
-# the same test environment concurrently.
 concurrency:
   group: agba-e2e-${{ github.ref }}
   cancel-in-progress: false
@@ -31,6 +29,11 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: deno run --allow-net --allow-env tests/telegram-queue-reliability-e2e.ts
+      - name: Run Workforce Action lifecycle E2E
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: deno run --allow-net --allow-env tests/workforce-action-router-e2e.ts
       - name: Run Puter provider fallback test
         run: deno run --allow-env --allow-net tests/puter-provider-fallback.ts
       - name: Run Agba Alibaba E2E
