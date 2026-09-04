@@ -5,11 +5,14 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
   headers: { "Content-Type": "application/json" },
 });
 
-const WORKER_SECRET = Deno.env.get("AGBA_PROACTIVE_WORKER_SECRET");
-
 function authOk(req: Request): boolean {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const supplied = req.headers.get("x-agba-worker-secret");
-  return Boolean(WORKER_SECRET && supplied && supplied === WORKER_SECRET);
+  const bearer = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  return Boolean(
+    serviceRoleKey &&
+    ((supplied && supplied === serviceRoleKey) || (bearer && bearer === serviceRoleKey))
+  );
 }
 
 function fingerprint(parts: string[]): string {
@@ -48,6 +51,7 @@ Deno.serve(async (req) => {
   const selected = (watchers ?? []).filter((w) => !body.watcher_key || w.key === body.watcher_key);
   const created: unknown[] = [];
   const skipped: unknown[] = [];
+  const errors: unknown[] = [];
 
   for (const watcher of selected) {
     try {
@@ -129,21 +133,24 @@ Deno.serve(async (req) => {
         consecutive_failures: 0,
       }).eq("id", watcher.id);
     } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      errors.push({ watcher: watcher.key, detail });
       await admin.from("agba_proactive_watchers").update({
         last_run_at: new Date().toISOString(),
         next_run_at: new Date(Date.now() + watcher.interval_seconds * 1000).toISOString(),
-        last_error: error instanceof Error ? error.message : String(error),
+        last_error: detail,
         consecutive_failures: (watcher.consecutive_failures ?? 0) + 1,
       }).eq("id", watcher.id);
     }
   }
 
   return json({
-    ok: true,
+    ok: errors.length === 0,
     organization_id: orgId,
     watchers_checked: selected.length,
     proposals_created: created.length,
     proposals_deduplicated: skipped.length,
+    errors,
     proposals: created,
   });
 });
