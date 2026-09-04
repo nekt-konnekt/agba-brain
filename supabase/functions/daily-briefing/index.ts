@@ -19,33 +19,42 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !serviceRoleKey) return json({ error: "server_configuration_error" }, 500);
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return json({ error: "missing_authorization" }, 401);
-
   const admin = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const token = authHeader.replace(/^Bearer\s+/i, "");
-  const { data: { user }, error: authError } = await admin.auth.getUser(token);
-  if (authError || !user) return json({ error: "invalid_authorization" }, 401);
 
-  let body: { organization_id: string; department_id?: string | null; briefing_date?: string };
+  let body: { organization_id: string; department_id?: string | null; briefing_date?: string; deliver?: boolean; secret?: string };
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
   if (!body.organization_id) return json({ error: "organization_id_required" }, 400);
 
-  const { data: actor } = await admin
-    .from("agba_users")
-    .select("id, department_id, active, agba_roles(code)")
-    .eq("auth_user_id", user.id)
-    .eq("organization_id", body.organization_id)
-    .eq("active", true)
-    .maybeSingle();
-  if (!actor) return json({ error: "actor_not_registered_for_organization" }, 403);
+  const internalSecret = body.secret ? String((await admin.rpc("agba_telegram_worker_secret")).data || "") : "";
+  const isInternal = !!body.secret && !!internalSecret && body.secret === internalSecret;
 
-  const role = (actor.agba_roles as { code?: string } | null)?.code;
-  if (role !== "ceo" && role !== "department_head") return json({ error: "insufficient_role" }, 403);
+  let role: string | null = null;
+  if (isInternal) {
+    role = "ceo";
+  } else {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return json({ error: "missing_authorization" }, 401);
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    const { data: { user }, error: authError } = await admin.auth.getUser(token);
+    if (authError || !user) return json({ error: "invalid_authorization" }, 401);
+
+    const { data: actor } = await admin
+      .from("agba_users")
+      .select("id, department_id, active, agba_roles(code)")
+      .eq("auth_user_id", user.id)
+      .eq("organization_id", body.organization_id)
+      .eq("active", true)
+      .maybeSingle();
+    if (!actor) return json({ error: "actor_not_registered_for_organization" }, 403);
+
+    role = (actor.agba_roles as { code?: string } | null)?.code || null;
+    if (role !== "ceo" && role !== "department_head") return json({ error: "insufficient_role" }, 403);
+
+    const requestedDepartment = body.department_id ?? null;
+    if (role === "department_head" && requestedDepartment !== actor.department_id) return json({ error: "department_scope_violation" }, 403);
+  }
 
   const requestedDepartment = body.department_id ?? null;
-  if (role === "department_head" && requestedDepartment !== actor.department_id) return json({ error: "department_scope_violation" }, 403);
-
   const audience = role === "ceo" && !requestedDepartment ? "ceo" : "department_head";
   const departmentId = audience === "ceo" ? null : requestedDepartment;
   const briefingDate = body.briefing_date ?? new Date().toISOString().slice(0, 10);
@@ -121,11 +130,51 @@ Deno.serve(async (req) => {
   if (cleanupError) return json({ error: "briefing_items_cleanup_failed", detail: cleanupError.message }, 400);
 
   const rows = items.map((item) => ({ ...item, briefing_id: briefing.id }));
+  let inserted: Row[] = [];
   if (rows.length) {
-    const { data: inserted, error: itemError } = await admin.from("agba_briefing_items").insert(rows).select("*");
+    const { data, error: itemError } = await admin.from("agba_briefing_items").insert(rows).select("*");
     if (itemError) return json({ error: "briefing_items_failed", detail: itemError.message }, 400);
-    return json({ briefing, items: inserted ?? [], counts: { risks: criticalRisks.length, overdue_actions: overdue.length, pending_decisions: pendingDecisions.length, at_risk_goals: atRiskGoals.length, proposals: proposals.length }, generated_by: "evidence_compiler" }, 201);
+    inserted = data ?? [];
   }
 
-  return json({ briefing, items: [], counts: { risks: 0, overdue_actions: 0, pending_decisions: 0, at_risk_goals: 0, proposals: 0 }, generated_by: "evidence_compiler" }, 201);
+  let deliveryQueued = 0;
+  if (isInternal && body.deliver !== false && audience === "ceo") {
+    const { data: bindings, error: bindingError } = await admin
+      .from("agba_telegram_bindings")
+      .select("chat_id, role_code")
+      .eq("organization_id", body.organization_id)
+      .eq("role_code", "ceo");
+    if (bindingError) return json({ error: "telegram_binding_lookup_failed", detail: bindingError.message }, 400);
+
+    const lines = ["🧠 Agba — Morning Brief", "", summary];
+    for (const item of inserted.slice().sort((a, b) => Number(a.priority ?? 9) - Number(b.priority ?? 9))) {
+      lines.push("", `${item.type === "issue" ? "🔴" : item.type === "decision" ? "🟡" : item.type === "task" ? "⏰" : "🟢"} ${item.title}`, String(item.content || ""));
+    }
+    const text = lines.join("\n").slice(0, 12000);
+
+    for (const binding of bindings ?? []) {
+      const chatId = String(binding.chat_id);
+      const { data: existing } = await admin
+        .from("agba_telegram_delivery_outbox")
+        .select("id,status")
+        .eq("organization_id", body.organization_id)
+        .eq("chat_id", chatId)
+        .filter("payload->>briefing_id", "eq", briefing.id)
+        .limit(1);
+      if (existing?.length) continue;
+
+      const { error: outboxError } = await admin.from("agba_telegram_delivery_outbox").insert({
+        organization_id: body.organization_id,
+        chat_id: chatId,
+        payload: { type: "daily_briefing", briefing_id: briefing.id, chat_id: chatId, text },
+        status: "pending",
+        attempts: 0,
+        max_attempts: 5,
+      });
+      if (outboxError) return json({ error: "telegram_outbox_insert_failed", detail: outboxError.message }, 400);
+      deliveryQueued++;
+    }
+  }
+
+  return json({ briefing, items: inserted, counts: { risks: criticalRisks.length, overdue_actions: overdue.length, pending_decisions: pendingDecisions.length, at_risk_goals: atRiskGoals.length, proposals: proposals.length }, generated_by: "evidence_compiler", delivery_queued: deliveryQueued }, 201);
 });
