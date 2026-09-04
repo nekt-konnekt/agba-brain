@@ -11,6 +11,8 @@ export type ActionMutation = {
   status?: "open" | "in_progress" | "done" | "cancelled" | null;
   priority?: "low" | "medium" | "high" | null;
   metadata?: Record<string, unknown>;
+  sourceCeoQueryId?: string | null;
+  sourceStateItemId?: string | null;
 };
 
 function normalizeOwnerName(value: string | null | undefined) {
@@ -30,6 +32,8 @@ export async function mutateAction(db: SupabaseClient, input: ActionMutation) {
     p_status: input.status ?? null,
     p_priority: input.priority ?? null,
     p_metadata: input.metadata ?? {},
+    p_source_ceo_query_id: input.sourceCeoQueryId ?? null,
+    p_source_state_item_id: input.sourceStateItemId ?? null,
   });
 
   if (error) throw new Error(`action_mutation_failed:${error.message}`);
