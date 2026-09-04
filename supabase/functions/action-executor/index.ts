@@ -1,15 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { updateActionStatus } from "../_shared/action-service.ts";
 
 const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
 
 type Tool=(input:Record<string,unknown>)=>Promise<Record<string,unknown>>;
-
-const tools:Record<string,Tool>={
-  "noop":async(input)=>({ok:true,tool:"noop",message:String(input.message??"No-op execution completed.")}),
-};
-
-function validStatus(status:string){return ["pending","running","succeeded","failed","cancelled"].includes(status)}
+const tools:Record<string,Tool>={"noop":async(input)=>({ok:true,tool:"noop",message:String(input.message??"No-op execution completed.")})};
 
 Deno.serve(async(req)=>{
   if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
@@ -37,8 +33,8 @@ Deno.serve(async(req)=>{
   if(createError||!execution)return json({error:"execution_create_failed",detail:createError?.message},400);
   const {data:running,error:runningError}=await admin.from("agba_action_executions").update({status:"running",started_at:new Date().toISOString()}).eq("id",execution.id).eq("status","pending").select("*").single();
   if(runningError||!running)return json({error:"execution_start_failed",detail:runningError?.message},400);
-  await admin.from("agba_actions").update({status:"in_progress"}).eq("id",actionId).eq("organization_id",organizationId).in("status",["open","in_progress"]);
   try{
+    await updateActionStatus(admin,{organizationId,actionId,actorId:actor.id,status:"in_progress"});
     const result=await tools[toolName](input);
     const {data:done,error:doneError}=await admin.from("agba_action_executions").update({status:"succeeded",output:result,completed_at:new Date().toISOString()}).eq("id",execution.id).eq("status","running").select("*").single();
     if(doneError||!done)return json({error:"execution_complete_failed",detail:doneError?.message},400);
