@@ -43,17 +43,21 @@ Deno.serve(async (req) => {
   const orgId = actor.organization_id;
   const today = new Date().toISOString().slice(0, 10);
 
-  const [orgQ, departmentsQ, reportsQ, stateQ, actionsQ, decisionsQ, metricsQ] = await Promise.all([
+  const [orgQ, departmentsQ, reportsQ, stateQ, actionsQ, decisionsQ, metricsQ, queriesQ, telegramQ, inboundQ, outboundQ] = await Promise.all([
     admin.from("agba_organizations").select("id,name,timezone,currency_code").eq("id", orgId).single(),
     admin.from("agba_departments").select("id,name,slug,active").eq("organization_id", orgId).eq("active", true).order("name"),
-    admin.from("agba_reports").select("id,department_id,submitted_by,report_date,raw_text,status,created_at").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(40),
+    admin.from("agba_reports").select("id,department_id,submitted_by,report_date,raw_text,status,source,created_at,processed_at").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(40),
     admin.from("agba_state_items").select("id,department_id,kind,state_key,title,summary,status,confidence,severity,recommended_action,first_seen_at,last_seen_at,source_report_id,metadata").eq("organization_id", orgId).in("status", ["active", "monitoring"]).order("last_seen_at", { ascending: false }).limit(40),
     admin.from("agba_actions").select("id,owner_name,description,deadline,status,priority,source_ceo_query_id,source_state_item_id,created_at,updated_at,metadata").eq("organization_id", orgId).in("status", ["open", "in_progress"]).order("created_at", { ascending: false }).limit(30),
     admin.from("agba_decisions").select("id,department_id,made_by_user_id,title,decision_text,status,decided_at,created_at").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(10),
     admin.from("agba_metrics").select("name,key,unit,value_numeric,value_text,measured_on").eq("organization_id", orgId).order("measured_on", { ascending: false }).limit(50),
+    admin.from("agba_ceo_queries").select("id,question,answer,confidence,confidence_reason,provenance,created_at").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(12),
+    admin.from("agba_telegram_bindings").select("chat_id,telegram_username,role_code,created_at,updated_at").eq("organization_id", orgId).order("updated_at", { ascending: false }).limit(10),
+    admin.from("agba_telegram_update_inbox").select("id,message_id,payload,status,received_at,dispatched_at,completed_at,last_error").eq("organization_id", orgId).order("received_at", { ascending: false }).limit(12),
+    admin.from("agba_telegram_delivery_outbox").select("id,inbox_id,payload,status,sent_at,created_at,updated_at,last_error").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(12),
   ]);
 
-  for (const q of [orgQ, departmentsQ, reportsQ, stateQ, actionsQ, decisionsQ, metricsQ]) {
+  for (const q of [orgQ, departmentsQ, reportsQ, stateQ, actionsQ, decisionsQ, metricsQ, queriesQ, telegramQ, inboundQ, outboundQ]) {
     if (q.error) return json({ error: "office_read_failed", detail: q.error.message }, 400);
   }
 
@@ -63,6 +67,10 @@ Deno.serve(async (req) => {
   const actions = actionsQ.data ?? [];
   const decisions = decisionsQ.data ?? [];
   const metrics = metricsQ.data ?? [];
+  const queries = queriesQ.data ?? [];
+  const telegramBindings = telegramQ.data ?? [];
+  const inbound = inboundQ.data ?? [];
+  const outbound = outboundQ.data ?? [];
 
   const todayReports = reports.filter((r: any) => r.report_date === today);
   const reportsByDept = new Set(todayReports.map((r: any) => r.department_id).filter(Boolean));
@@ -93,6 +101,23 @@ Deno.serve(async (req) => {
     ...actions.slice(0, 4).map((a: any) => ({ icon: "✓", title: a.description, text: `${a.owner_name ?? "Unassigned"}${a.deadline ? ` · Due ${new Date(a.deadline).toLocaleDateString("en-NG")}` : ""}`, badge: String(a.priority).toUpperCase(), tone: ["critical", "high"].includes(a.priority) ? "danger" : "warn", source_action_id: a.id })),
   ].slice(0, 6);
 
+  const telegramMessages = inbound.map((item: any) => ({
+    direction: "inbound",
+    text: item.payload?.message?.text ?? item.payload?.message?.caption ?? null,
+    username: item.payload?.message?.from?.username ?? null,
+    received_at: item.received_at,
+    status: item.status,
+    last_error: item.last_error,
+  })).filter((m: any) => m.text).slice(0, 8);
+
+  const telegramReplies = outbound.map((item: any) => ({
+    direction: "outbound",
+    text: item.payload?.text ?? item.payload?.message?.text ?? null,
+    sent_at: item.sent_at ?? item.updated_at ?? item.created_at,
+    status: item.status,
+    last_error: item.last_error,
+  })).filter((m: any) => m.text).slice(0, 8);
+
   return json({
     organization: orgQ.data,
     today,
@@ -107,6 +132,20 @@ Deno.serve(async (req) => {
     decisions: decisions.map((d: any) => ({ date: d.decided_at ?? d.created_at, title: d.title, text: d.decision_text, status: d.status })),
     actions,
     state: state.map((s: any) => ({ id: s.id, kind: s.kind, title: s.title, summary: s.summary, severity: s.severity, confidence: s.confidence, recommended_action: s.recommended_action, last_seen_at: s.last_seen_at })),
-    reports: reports.slice(0, 10).map((r: any) => ({ id: r.id, department_id: r.department_id, report_date: r.report_date, status: r.status, created_at: r.created_at })),
+    reports: reports.slice(0, 12).map((r: any) => ({ id: r.id, department_id: r.department_id, report_date: r.report_date, raw_text: r.raw_text, status: r.status, source: r.source, created_at: r.created_at, processed_at: r.processed_at })),
+    conversations: queries.map((q: any) => ({ id: q.id, question: q.question, answer: q.answer, confidence: q.confidence, confidence_reason: q.confidence_reason, created_at: q.created_at, provenance: q.provenance })),
+    telegram: {
+      connected: telegramBindings.length > 0,
+      bindings: telegramBindings.map((b: any) => ({ telegram_username: b.telegram_username, role_code: b.role_code, created_at: b.created_at, updated_at: b.updated_at })),
+      recent_messages: [...telegramMessages, ...telegramReplies].sort((a: any, b: any) => new Date(b.received_at ?? b.sent_at).getTime() - new Date(a.received_at ?? a.sent_at).getTime()).slice(0, 10),
+    },
+    source_counts: {
+      reports: reports.length,
+      conversations: queries.length,
+      active_state: state.length,
+      open_actions: actions.length,
+      telegram_inbound: inbound.length,
+      telegram_outbound: outbound.length,
+    },
   });
 });
