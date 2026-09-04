@@ -10,111 +10,33 @@ const PORT = 3000;
 const HOST = '0.0.0.0';
 
 app.use(express.json());
-
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'agba-brain' });
-});
-
-// Specific page rewrites matching vercel.json
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'index.html'));
-});
-
-app.get('/signup', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'signup.html'));
-});
-
-app.get('/signup/account', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'signup-account.html'));
-});
-
-app.get('/signin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'signin.html'));
-});
-
-app.get('/forgot-password', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'forgot-password.html'));
-});
-
-app.get('/reset-password', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'reset-password.html'));
-});
-
-app.get('/onboarding', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'onboarding.html'));
-});
-
-app.get('/onboarding/telegram', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'onboarding-telegram.html'));
-});
-
-app.get('/office', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'office.html'));
-});
-
-app.get('/ask', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'office.html'));
-});
-
-app.get('/actions', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'office.html'));
-});
-
-app.get('/departments', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'office.html'));
-});
-
-app.get('/decisions', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'office.html'));
-});
-
-app.get('/for-ceos', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'for-ceos.html'));
-});
-
-// Direct assets in /web
-app.get('/app.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'app.js'));
-});
-
-app.get('/styles.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'styles.css'));
-});
-
-app.get('/design-system.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'design-system.css'));
-});
-
-app.get('/onboarding-styles.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'onboarding-styles.css'));
-});
-
-app.get('/agba-logo.svg', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg'));
-});
-
-app.get('/agba-wordmark.svg', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'agba-wordmark.svg'));
-});
-
-app.get('/robots.txt', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'robots.txt'));
-});
-
-app.get('/sitemap.xml', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'sitemap.xml'));
-});
-
-app.get('/favicon.ico', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg'));
-});
-
-app.get('/favicon.svg', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg'));
-});
-
-// Static assets serving from web directory and root directory
+app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'agba-brain' }));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index.html')));
+app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signup.html')));
+app.get('/signup/account', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signup-account.html')));
+app.get('/signin', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signin.html')));
+app.get('/forgot-password', (req, res) => res.sendFile(path.join(__dirname, 'web', 'forgot-password.html')));
+app.get('/reset-password', (req, res) => res.sendFile(path.join(__dirname, 'web', 'reset-password.html')));
+app.get('/onboarding', (req, res) => res.sendFile(path.join(__dirname, 'web', 'onboarding.html')));
+app.get('/onboarding/telegram', (req, res) => res.sendFile(path.join(__dirname, 'web', 'onboarding-telegram.html')));
+app.get('/office', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/ask', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/actions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/departments', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/decisions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/superadmin', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin.html')));
+app.get('/for-ceos', (req, res) => res.sendFile(path.join(__dirname, 'web', 'for-ceos.html')));
+app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'app.js')));
+app.get('/superadmin.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin.js')));
+app.get('/styles.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'styles.css')));
+app.get('/design-system.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'design-system.css')));
+app.get('/onboarding-styles.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'onboarding-styles.css')));
+app.get('/agba-logo.svg', (req, res) => res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg')));
+app.get('/agba-wordmark.svg', (req, res) => res.sendFile(path.join(__dirname, 'web', 'agba-wordmark.svg')));
+app.get('/robots.txt', (req, res) => res.sendFile(path.join(__dirname, 'web', 'robots.txt')));
+app.get('/sitemap.xml', (req, res) => res.sendFile(path.join(__dirname, 'web', 'sitemap.xml')));
+app.get('/favicon.ico', (req, res) => res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg')));
+app.get('/favicon.svg', (req, res) => res.sendFile(path.join(__dirname, 'web', 'agba-logo.svg')));
 app.use('/web', express.static(path.join(__dirname, 'web')));
 app.use('/actions', express.static(path.join(__dirname, 'actions')));
 app.use('/ask', express.static(path.join(__dirname, 'ask')));
@@ -123,12 +45,5 @@ app.use('/departments', express.static(path.join(__dirname, 'departments')));
 app.use('/office', express.static(path.join(__dirname, 'office')));
 app.use(express.static(path.join(__dirname, 'web')));
 app.use(express.static(__dirname));
-
-// Fallback for HTML5 client-side navigation
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'web', 'index.html'));
-});
-
-app.listen(PORT, HOST, () => {
-  console.log(`Agba server running at http://${HOST}:${PORT}`);
-});
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index.html')));
+app.listen(PORT, HOST, () => console.log(`Agba server running at http://${HOST}:${PORT}`));
