@@ -26,7 +26,7 @@ Deno.serve(async(req)=>{
   const {data:existing,error:existingError}=await db.from("agba_action_executions").select("*").eq("organization_id",proposal.organization_id).eq("idempotency_key",idem).maybeSingle();
   if(existingError)throw existingError;
   if(existing)return json({ok:existing.status==="succeeded",replayed:true,execution:existing});
-  const {data:execution,error:createError}=await db.from("agba_action_executions").insert({organization_id:proposal.organization_id,action_id:proposal.action_id,tool_name:"action_mutation",status:"pending",idempotency_key:idem,input:{operation:"status",status:"in_progress",proposal_id:proposal.id},metadata:{source:"approved_proposal",proposal_id:proposal.id}}).select("*").single();
+  const {data:execution,error:createError}=await db.from("agba_action_executions").insert({organization_id:proposal.organization_id,action_id:proposal.action_id,tool_name:"action_mutation",status:"pending",idempotency_key:idem,input:{operation:"status",status:"in_progress",proposal_id:proposal.id,source:"approved_proposal"}}).select("*").single();
   if(createError||!execution)return json({error:"execution_create_failed",detail:createError?.message},400);
   const {data:running,error:runningError}=await db.from("agba_action_executions").update({status:"running",started_at:new Date().toISOString()}).eq("id",execution.id).eq("status","pending").select("*").single();
   if(runningError||!running)return json({error:"execution_start_failed",detail:runningError?.message},400);
