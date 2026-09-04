@@ -142,17 +142,14 @@ Deno.serve(async (req) => {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
 
   try {
-    if (req.method === "POST") {
-      const body = await req.json();
-      if (body?.operation === "bootstrap") return await bootstrap(req, admin);
-    }
+    let body: any = null;
+    if (req.method === "POST") body = await req.json();
+    if (body?.operation === "bootstrap") return await bootstrap(req, admin);
 
     const a = await actor(req, admin);
     if (a.error) return a.error;
     if (req.method === "GET") return json(await overview(admin));
     if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-
-    const body = await req.json();
     if (body?.operation === "overview") return json(await overview(admin));
     if (body?.operation === "recover") return json({ execution: await recover(admin, a.user, String(body.key || ""), body.input || {}) });
     return json({ error: "unsupported_operation" }, 400);
