@@ -30,6 +30,7 @@ try{
   q=await router(chat,secret,`Mark the ${marker} as done`,inboxId);if(!q.handled)throw new Error(`terminal repeat not handled: ${JSON.stringify(q)}`);r=await rows(`agba_actions?id=eq.${actionId}&select=status,owner_name,priority,deadline`);if(r[0]?.status!=="done"||r[0]?.owner_name!=="Chinedu"||r[0]?.priority!=="high"||!sameInstant(r[0]?.deadline,lagosNextFriday()))throw new Error(`terminal repeat mutated completed action: ${JSON.stringify(r[0])}`);console.log("- terminal repeat protection: PASS");
   console.log("WORKFORCE ACTION ROUTER E2E: PASS");
 }finally{
+  await rest(`/rest/v1/agba_state_items?organization_id=eq.${org}&or=(title.ilike.*${encodeURIComponent(marker)}*,summary.ilike.*${encodeURIComponent(marker)}*,state_key.ilike.*${encodeURIComponent(marker)}*,metadata.cs.%7B%22marker%22%3A%22${encodeURIComponent(marker)}%22%7D)`,{method:"DELETE"}).catch(e=>console.error("state cleanup failed",e));
   if(actionId)await rest(`/rest/v1/agba_actions?id=eq.${actionId}`,{method:"DELETE"}).catch(e=>console.error("action cleanup failed",e));
   if(inboxId){await rest(`/rest/v1/agba_telegram_delivery_outbox?inbox_id=eq.${inboxId}`,{method:"DELETE"}).catch(e=>console.error("delivery cleanup failed",e));await rest(`/rest/v1/agba_telegram_update_inbox?id=eq.${inboxId}`,{method:"DELETE"}).catch(e=>console.error("inbox cleanup failed",e));}
 }
