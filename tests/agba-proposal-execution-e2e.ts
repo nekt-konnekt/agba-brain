@@ -1,7 +1,7 @@
 const supabaseUrl=Deno.env.get("SUPABASE_URL")||"";
 const serviceKey=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
 if(!supabaseUrl||!serviceKey)throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
-const headers={apikey:serviceKey,Authorization:`Bearer ${serviceKey},Content-Type":"application/json"};
+const headers={apikey:serviceKey,Authorization:`Bearer ${serviceKey}`,"Content-Type":"application/json"};
 async function rest(path:string,options:RequestInit={}){const r=await fetch(`${supabaseUrl}/rest/v1/${path}`,{...options,headers:{...headers,...(options.headers||{})}});const text=await r.text();if(!r.ok)throw new Error(`${options.method||"GET"} ${path}: ${r.status} ${text}`);return text?JSON.parse(text):null;}
 async function rpc(name:string,args:Record<string,unknown>){return rest(`rpc/${name}`,{method:"POST",body:JSON.stringify(args)});}
 async function fn(name:string,body:Record<string,unknown>,secret:string){const r=await fetch(`${supabaseUrl}/functions/v1/${name}`,{method:"POST",headers:{"Content-Type":"application/json","x-agba-worker-secret":secret},body:JSON.stringify(body)});const text=await r.text();let data:any={};try{data=JSON.parse(text)}catch{data={raw:text}}if(!r.ok)throw new Error(`${name}: ${r.status} ${text}`);return data;}
@@ -22,8 +22,8 @@ let proposalId:string|null=null;let approvalId:string|null=null;try{
  console.log("- execution evidence ledger records success: PASS");
  console.log("- proposal execution idempotency/replay: PASS");
 }finally{
- if(proposalId)await rest(`agba_proposals?id=eq.${proposalId}`,{method:"DELETE"});
- if(approvalId)await rest(`agba_approvals?id=eq.${approvalId}`,{method:"DELETE"});
+ if(proposalId)await rest(`agba_proposals?id=eq.${proposalId}`,{method:"DELETE"}).catch(()=>{});
+ if(approvalId)await rest(`agba_approvals?id=eq.${approvalId}`,{method:"DELETE"}).catch(()=>{});
  await rpc("agba_mutate_action",{p_operation:"status",p_action_id:actionRow.id,p_organization_id:org,p_created_by:null,p_description:null,p_owner_name:null,p_deadline:null,p_status:"cancelled",p_priority:null,p_metadata:{test_cleanup:true}}).catch(()=>{});
  await rest(`agba_actions?id=eq.${actionRow.id}`,{method:"DELETE"}).catch(()=>{});
 }
