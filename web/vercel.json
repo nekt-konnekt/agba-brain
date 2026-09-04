@@ -1,0 +1,32 @@
+{
+  "headers": [
+    {
+      "source": "/(signup|signup/account|signin|forgot-password|reset-password|onboarding|onboarding/telegram|office|ask|actions|departments|decisions)(/.*)?",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/api/mcp", "destination": "https://iijhsdaqaqywzpavdonn.supabase.co/functions/v1/agba-mcp" },
+    { "source": "/mcp", "destination": "https://iijhsdaqaqywzpavdonn.supabase.co/functions/v1/agba-mcp" },
+    { "source": "/signup", "destination": "/signup.html" },
+    { "source": "/signup/account", "destination": "/signup-account.html" },
+    { "source": "/signin", "destination": "/signin.html" },
+    { "source": "/forgot-password", "destination": "/forgot-password.html" },
+    { "source": "/reset-password", "destination": "/reset-password.html" },
+    { "source": "/onboarding", "destination": "/onboarding.html" },
+    { "source": "/onboarding/telegram", "destination": "/onboarding-telegram.html" },
+    { "source": "/office", "destination": "/office.html" },
+    { "source": "/ask", "destination": "/office.html" },
+    { "source": "/actions", "destination": "/office.html" },
+    { "source": "/departments", "destination": "/office.html" },
+    { "source": "/decisions", "destination": "/office.html" },
+    { "source": "/for-ceos", "destination": "/for-ceos.html" },
+    { "source": "/app.js", "destination": "/app.js" },
+    { "source": "/styles.css", "destination": "/styles.css" },
+    { "source": "/design-system.css", "destination": "/design-system.css" },
+    { "source": "/onboarding-styles.css", "destination": "/onboarding-styles.css" },
+    { "source": "/agba-logo.svg", "destination": "/agba-logo.svg" }
+  ]
+}
