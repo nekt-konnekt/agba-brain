@@ -24,5 +24,14 @@ Deno.serve(async(req)=>{
   const p=rows[0]; let approvalId=p.approval_id;
   if(!approvalId){const {data:a,error:ae}=await sb.rpc("agba_create_proposal_approval",{p_proposal_id:p.id,p_requested_by:b.agba_user_id});if(ae)throw ae;approvalId=a;}
   const {data:decided,error:de}=await sb.rpc("agba_decide_proposal",{p_proposal_id:p.id,p_approval_id:approvalId,p_decision:decision,p_decided_by:b.agba_user_id});if(de)throw de;
-  const label=decision==="approved"?"APPROVED":decision==="rejected"?"REJECTED":"DEFERRED";await send(`Agba 🧠\n\nProposal **${String(p.id).slice(0,8)}** — **${label}**.\n\n${p.title}\n\nI recorded your decision. No action was executed by this approval step.`);return json({ok:true,handled:true,proposal:decided});
+  const label=decision==="approved"?"APPROVED":decision==="rejected"?"REJECTED":"DEFERRED";
+  if(decision==="approved"){
+    const workerSecret=req.headers.get("x-agba-worker-secret")||"";
+    const r=await fetch(`${url}/functions/v1/proposal-executor`,{method:"POST",headers:{...H,"x-agba-worker-secret":workerSecret},body:JSON.stringify({proposal_id:p.id})});
+    let result:any={};try{result=await r.json()}catch{result={error:"invalid_executor_response"}};
+    if(!r.ok||result.ok===false){await send(`Agba 🧠\n\nProposal **${String(p.id).slice(0,8)}** — **APPROVED**.\n\n${p.title}\n\nApproval was recorded, but execution did not complete. I have kept the execution failure in the action ledger for review.`);return json({ok:true,handled:true,proposal:decided,execution:result});}
+    await send(`Agba 🧠\n\nProposal **${String(p.id).slice(0,8)}** — **APPROVED & EXECUTED**.\n\n${p.title}\n\nThe governed action was moved to **in progress** and the execution result was recorded as evidence.`);
+    return json({ok:true,handled:true,proposal:decided,execution:result});
+  }
+  await send(`Agba 🧠\n\nProposal **${String(p.id).slice(0,8)}** — **${label}**.\n\n${p.title}\n\nYour decision was recorded. No action was executed.`);return json({ok:true,handled:true,proposal:decided});
 });
