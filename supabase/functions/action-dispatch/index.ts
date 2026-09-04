@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { updateActionStatus } from "../_shared/action-service.ts";
 
 const headers={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers});
@@ -35,7 +36,13 @@ Deno.serve(async(req)=>{
   if(createError||!execution) return json({error:"execution_create_failed",detail:createError?.message},400);
   const {data:running,error:runningError}=await db.from("agba_action_executions").update({status:"running",started_at:new Date().toISOString()}).eq("id",execution.id).eq("status","pending").select("*").single();
   if(runningError||!running) return json({error:"execution_start_failed",detail:runningError?.message},400);
-  await db.from("agba_actions").update({status:"in_progress"}).eq("id",actionId).eq("organization_id",organizationId).in("status",["open","in_progress"]);
+  try {
+    await updateActionStatus(db,{organizationId,actionId,actorId:actor.id,status:"in_progress"});
+  } catch (error) {
+    const message=error instanceof Error?error.message:String(error);
+    await db.from("agba_action_executions").update({status:"failed",error:message,completed_at:new Date().toISOString()}).eq("id",execution.id).eq("status","running");
+    return json({error:"action_mutation_failed",detail:message},403);
+  }
   if(tool!=="noop"){
     const message=`Tool '${tool}' is not registered in Action Executor V1.`;
     const {data:failed}=await db.from("agba_action_executions").update({status:"failed",error:message,completed_at:new Date().toISOString()}).eq("id",execution.id).eq("status","running").select("*").single();
