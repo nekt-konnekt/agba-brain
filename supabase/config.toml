@@ -13,6 +13,9 @@ verify_jwt = true
 [functions.daily-briefing]
 verify_jwt = true
 
+[functions.proactive-runner]
+verify_jwt = false
+
 [functions.telegram-receiver]
 verify_jwt = false
 
