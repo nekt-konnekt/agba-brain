@@ -1,7 +1,7 @@
 {
   "headers": [
     {
-      "source": "/(signup|signup/account|signin|forgot-password|reset-password|onboarding|onboarding/telegram|office|ask|actions|departments|decisions)(/.*)?",
+      "source": "/(signup|signup/account|signin|forgot-password|reset-password|onboarding|onboarding/telegram|office|ask|actions|departments|decisions|superadmin)(/.*)?",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
       ]
@@ -22,8 +22,10 @@
     { "source": "/actions", "destination": "/office.html" },
     { "source": "/departments", "destination": "/office.html" },
     { "source": "/decisions", "destination": "/office.html" },
+    { "source": "/superadmin", "destination": "/superadmin.html" },
     { "source": "/for-ceos", "destination": "/for-ceos.html" },
     { "source": "/app.js", "destination": "/app.js" },
+    { "source": "/superadmin.js", "destination": "/superadmin.js" },
     { "source": "/styles.css", "destination": "/styles.css" },
     { "source": "/design-system.css", "destination": "/design-system.css" },
     { "source": "/onboarding-styles.css", "destination": "/onboarding-styles.css" },
