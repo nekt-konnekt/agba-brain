@@ -13,6 +13,9 @@ verify_jwt = true
 [functions.daily-briefing]
 verify_jwt = true
 
+[functions.executive-memory]
+verify_jwt = true
+
 [functions.proactive-runner]
 verify_jwt = false
 
