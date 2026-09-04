@@ -17,6 +17,7 @@ Deno.serve(async(req)=>{
     if(!data?.length){await send("Agba 🧠\n\nThere are no pending proposals.");return json({ok:true,handled:true,count:0});}
     const body=data.map((p:any)=>{const id=String(p.id).slice(0,8);return `• ${id} — ${p.title}${p.priority===1?" 🔴":p.priority===2?" 🟠":""}\n  ${p.summary||""}\n  Recommendation: ${p.recommendation||"Review and decide."}\n  /approve ${id}   /reject ${id}   /defer ${id}`}).join("\n\n");await send(`🧠 Agba — Pending Proposals\n\n${body}`);return json({ok:true,handled:true,count:data.length});
   }
+  if(/^\/(approve|reject|defer)$/i.test(text)){await send("Agba 🧠\n\nPlease specify the proposal reference.\n\nExample: /approve f6675561\n\nUse /proposals to see pending proposals.");return json({ok:true,handled:true});}
   const m=text.match(/^\/(approve|reject|defer)\s+([0-9a-f-]{6,36})$/i); if(!m)return json({ok:true,handled:false});
   const decision=m[1].toLowerCase(),prefix=m[2].toLowerCase(); const {data:rows,error:pe}=await sb.from("agba_proposals").select("*").eq("organization_id",b.organization_id).eq("status","proposed").ilike("id",`${prefix}%`).limit(2);if(pe)throw pe;
   if(!rows?.length){await send(`Agba 🧠\n\nI couldn't find a pending proposal starting with **${prefix}**.`);return json({ok:true,handled:true});}
