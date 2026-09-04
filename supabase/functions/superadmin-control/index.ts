@@ -19,6 +19,48 @@ async function actor(req: Request, admin: any) {
   return { user, platformAdmin };
 }
 
+async function authenticatedUser(req: Request, admin: any) {
+  const auth = req.headers.get("Authorization");
+  if (!auth) return { error: json({ error: "missing_authorization" }, 401) };
+  const token = auth.replace(/^Bearer\s+/i, "");
+  const { data: { user }, error } = await admin.auth.getUser(token);
+  if (error || !user) return { error: json({ error: "invalid_authorization" }, 401) };
+  return { user };
+}
+
+async function bootstrap(req: Request, admin: any) {
+  const a = await authenticatedUser(req, admin);
+  if (a.error) return a.error;
+
+  const configuredEmail = (Deno.env.get("SUPERADMIN_EMAIL") || "").trim().toLowerCase();
+  if (!configuredEmail) return json({ error: "bootstrap_not_configured" }, 503);
+
+  const email = (a.user.email || "").trim().toLowerCase();
+  if (!email || email !== configuredEmail) return json({ error: "superadmin_bootstrap_not_authorized" }, 403);
+
+  const { count, error: countError } = await admin.from("agba_platform_admins").select("id", { count: "exact", head: true });
+  if (countError) return json({ error: "platform_admin_count_failed", detail: countError.message }, 500);
+  if ((count ?? 0) > 0) return json({ error: "platform_admin_already_configured" }, 409);
+
+  const { data: inserted, error: insertError } = await admin.from("agba_platform_admins").insert({
+    auth_user_id: a.user.id,
+    email: a.user.email,
+    active: true,
+  }).select("id,auth_user_id,email,active,created_at").single();
+  if (insertError) return json({ error: "platform_admin_bootstrap_failed", detail: insertError.message }, 500);
+
+  await admin.from("agba_audit_logs").insert({
+    organization_id: null,
+    actor_auth_user_id: a.user.id,
+    action: "superadmin.bootstrap.completed",
+    entity_type: "platform_admin",
+    entity_id: inserted.id,
+    metadata: { email: a.user.email },
+  });
+
+  return json({ ok: true, platform_admin: inserted });
+}
+
 async function overview(admin: any) {
   const [components, incidents, recoveries, inbox, delivery, audit] = await Promise.all([
     admin.from("agba_system_components").select("id,key,name,category,status,last_heartbeat_at,last_success_at,last_failure_at,failure_count,metadata,updated_at").order("category").order("name"),
@@ -40,8 +82,15 @@ async function recover(admin: any, user: any, key: string, input: any) {
   if (!action) throw new Error("recovery_action_not_found");
   if (action.requires_confirmation && input?.confirmed !== true) throw new Error("confirmation_required");
 
+  const { data: execution, error: executionError } = await admin.from("agba_recovery_executions").insert({
+    recovery_action_id: action.id,
+    actor_auth_user_id: user.id,
+    status: "started",
+    input: input ?? {},
+  }).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();
+  if (executionError) throw executionError;
+
   let output: any = {};
-  let status = "completed";
   try {
     if (key === "retry_telegram_inbox") {
       const id = String(input?.id || "");
@@ -69,16 +118,20 @@ async function recover(admin: any, user: any, key: string, input: any) {
     } else {
       throw new Error("unsupported_recovery_action");
     }
-  } catch (e) {
-    status = "failed";
-    throw e;
-  } finally {
-    await admin.from("agba_audit_logs").insert({ organization_id: null, actor_auth_user_id: user.id, action: `superadmin.recovery.${status}`, entity_type: "recovery_action", entity_id: action.id, metadata: { key, input: { ...input, confirmed: undefined }, output } });
-  }
 
-  const { data: execution, error: execError } = await admin.from("agba_recovery_executions").insert({ recovery_action_id: action.id, actor_auth_user_id: user.id, status, input: input ?? {}, output }).select("id,recovery_action_id,status,input,output,started_at,completed_at").maybeSingle();
-  if (execError) throw execError;
-  return execution;
+    const completedAt = new Date().toISOString();
+    const { data: updated, error: updateError } = await admin.from("agba_recovery_executions").update({ status: "completed", output, completed_at: completedAt }).eq("id", execution.id).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();
+    if (updateError) throw updateError;
+
+    await admin.from("agba_audit_logs").insert({ organization_id: null, actor_auth_user_id: user.id, action: "superadmin.recovery.completed", entity_type: "recovery_execution", entity_id: execution.id, metadata: { key, recovery_action_id: action.id, input: { ...input, confirmed: undefined }, output } });
+    return updated;
+  } catch (e) {
+    const error = { message: e instanceof Error ? e.message : "superadmin_recovery_failed" };
+    const completedAt = new Date().toISOString();
+    await admin.from("agba_recovery_executions").update({ status: "failed", error, completed_at: completedAt }).eq("id", execution.id);
+    await admin.from("agba_audit_logs").insert({ organization_id: null, actor_auth_user_id: user.id, action: "superadmin.recovery.failed", entity_type: "recovery_execution", entity_id: execution.id, metadata: { key, recovery_action_id: action.id, input: { ...input, confirmed: undefined }, error } });
+    throw e;
+  }
 }
 
 Deno.serve(async (req) => {
@@ -87,11 +140,18 @@ Deno.serve(async (req) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) return json({ error: "server_configuration_error" }, 500);
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-  const a = await actor(req, admin);
-  if (a.error) return a.error;
+
   try {
+    if (req.method === "POST") {
+      const body = await req.json();
+      if (body?.operation === "bootstrap") return await bootstrap(req, admin);
+    }
+
+    const a = await actor(req, admin);
+    if (a.error) return a.error;
     if (req.method === "GET") return json(await overview(admin));
     if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
     const body = await req.json();
     if (body?.operation === "overview") return json(await overview(admin));
     if (body?.operation === "recover") return json({ execution: await recover(admin, a.user, String(body.key || ""), body.input || {}) });
