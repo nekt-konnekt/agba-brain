@@ -5,7 +5,10 @@ begin
     where i.id = new.inbox_id
       and coalesce(i.payload->>'test_only','false') = 'true'
   ) then
-    new.payload := coalesce(new.payload,'{}'::jsonb) || jsonb_build_object('test_only',true,'test_scope','inbox-'||new.inbox_id::text);
+    new.payload := coalesce(new.payload,'{}'::jsonb) || jsonb_build_object(
+      'test_only', true,
+      'test_scope', coalesce(new.payload->>'test_scope', 'inbox-'||new.inbox_id::text)
+    );
   end if;
   return new;
 end;
