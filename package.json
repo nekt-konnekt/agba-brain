@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node server.js",
-    "build": "echo 'Static web application ready'",
+    "build": "rm -rf public && mkdir -p public && cp -R web/. public/ && echo 'Static web application ready'",
     "start": "node server.js"
   },
   "dependencies": {
