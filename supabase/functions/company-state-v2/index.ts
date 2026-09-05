@@ -1,0 +1,26 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+const h={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Content-Type":"application/json"};
+const out=(v:any,s=200)=>new Response(JSON.stringify(v),{status:s,headers:h});
+const norm=(v:string)=>String(v||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,180)||"unknown";
+Deno.serve(async(req)=>{
+ if(req.method==="OPTIONS")return new Response("ok",{headers:h}); if(req.method!=="POST")return out({error:"method_not_allowed"},405);
+ const u=Deno.env.get("SUPABASE_URL"),k=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"); if(!u||!k)return out({error:"server_configuration_error"},500);
+ const a=createClient(u,k,{auth:{autoRefreshToken:false,persistSession:false}}); const ah=req.headers.get("Authorization"); if(!ah)return out({error:"missing_authorization"},401);
+ const {data:{user}}=await a.auth.getUser(ah.replace(/^Bearer\\s+/i,"")); if(!user)return out({error:"invalid_authorization"},401);
+ let b:any;try{b=await req.json()}catch{return out({error:"invalid_json"},400)} if(!b.organization_id||!b.reasoning_item_id)return out({error:"organization_id_and_reasoning_item_id_are_required"},400);
+ const {data:actor}=await a.from("agba_users").select("id,department_id,agba_roles(code)").eq("auth_user_id",user.id).eq("organization_id",b.organization_id).eq("active",true).maybeSingle(); if(!actor)return out({error:"actor_not_registered_for_organization"},403);
+ const role=Array.isArray(actor.agba_roles)?actor.agba_roles[0]?.code:actor.agba_roles?.code; if(role!=="ceo"&&role!=="department_head")return out({error:"insufficient_role"},403); if(role==="department_head"&&actor.department_id!==b.department_id&&b.department_id)return out({error:"department_scope_violation"},403);
+ const {data:r,error:re}=await a.from("agba_reasoning_items").select("*").eq("id",b.reasoning_item_id).eq("organization_id",b.organization_id).maybeSingle(); if(re||!r)return out({error:"reasoning_not_found"},404);
+ const {data:links,error:le}=await a.from("agba_reasoning_evidence").select("report_id,report_entry_id,observation_id,issue_id,decision_id,evidence_note").eq("reasoning_item_id",r.id); if(le)return out({error:"reasoning_evidence_lookup_failed",detail:le.message},400);
+ const reportIds=[...new Set((links??[]).map((x:any)=>x.report_id).filter(Boolean))]; if(!reportIds.length)return out({error:"state_requires_report_evidence"},422);
+ const {data:reports,error:rp}=await a.from("agba_reports").select("id,department_id,raw_text,created_at,confirmation_status,confirmed_at").in("id",reportIds).eq("organization_id",b.organization_id); if(rp)return out({error:"report_evidence_lookup_failed",detail:rp.message},400); if(!reports||reports.length!==reportIds.length)return out({error:"evidence_not_found"},422);
+ const unconfirmed=reports.filter((x:any)=>x.confirmation_status!=="confirmed"); if(unconfirmed.length)return out({error:"unconfirmed_evidence_not_allowed",report_ids:unconfirmed.map((x:any)=>x.id)},422);
+ const sourceReport=(reports as any[]).sort((x,y)=>new Date(y.created_at).getTime()-new Date(x.created_at).getTime())[0]; const stateKey=`${r.department_id??"company"}:${r.type}:${norm(r.title)}`;
+ const requestedStatus=r.resolution_status??"unresolved"; const status=requestedStatus==="resolved"?"resolved":requestedStatus==="not_applicable"?"monitoring":r.severity&&["high","critical"].includes(r.severity)?"active":"monitoring";
+ if(status==="resolved"&&(!r.resolution_reason||!String(r.resolution_reason).trim()))return out({error:"resolution_requires_explicit_evidence"},422);
+ const now=new Date().toISOString(); const {data:existing}=await a.from("agba_state_items").select("id,first_seen_at,status,metadata").eq("organization_id",r.organization_id).eq("state_key",stateKey).maybeSingle();
+ const patch:any={organization_id:r.organization_id,department_id:r.department_id,state_key:stateKey,kind:r.type,title:r.title,summary:r.summary,status,confidence:r.confidence,severity:r.severity,recommended_action:r.recommended_action,last_seen_at:now,resolved_at:status==="resolved"?now:null,source_reasoning_item_id:r.id,source_report_id:sourceReport.id,metadata:{...(existing?.metadata??{}),grounding_policy:"confirmed_reports_only",evidence_report_ids:reportIds,resolution_status:requestedStatus,resolution_reason:r.resolution_reason??null}};
+ if(!existing)patch.first_seen_at=new Date(sourceReport.created_at).toISOString();
+ const {data:s,error}=await a.from("agba_state_items").upsert(patch,{onConflict:"organization_id,state_key"}).select("*").single(); if(error)return out({error:"state_materialization_failed",detail:error.message},400);
+ return out({state:s,grounding:{confirmed_reports:reportIds,source_report_id:sourceReport.id,resolution_status:requestedStatus}},201);
+});
