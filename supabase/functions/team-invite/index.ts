@@ -99,12 +99,12 @@ Deno.serve(async (req) => {
     });
     if (telegramInviteError) throw telegramInviteError;
 
-    return json(201, {
+    return json({
       staff,
       department: { id: department.id, name: department.name },
       email_sent: emailSent,
       telegram: { deep_link: `https://t.me/${botUsername}?start=${rawToken}`, expires_at: expiresAt },
-    });
+    }, 201);
   } catch (error) {
     console.error("team-invite failed", error);
     return json({ error: error instanceof Error ? error.message : "Could not invite staff member" }, 400);
