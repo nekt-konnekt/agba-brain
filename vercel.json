@@ -5,6 +5,12 @@
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }
       ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Link", "value": "</landing-hero.css>; rel=\"stylesheet\"" }
+      ]
     }
   ],
   "rewrites": [
