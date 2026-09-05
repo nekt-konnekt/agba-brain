@@ -1,0 +1,71 @@
+:root{--hero-lime:#c6f52d}
+
+/* Landing hero: lighter, more editorial floating signals on desktop. */
+.intelligence{min-height:500px;max-width:1080px;margin-top:52px}
+.signal{width:258px;padding:18px 19px;border-radius:18px;background:rgba(14,14,14,.82);border-color:#292929;box-shadow:0 24px 70px rgba(0,0,0,.34);transition:transform .35s ease,border-color .35s ease,box-shadow .35s ease}
+.signal:hover{transform:translateY(-4px);border-color:#3a3a3a;box-shadow:0 28px 80px rgba(0,0,0,.42)}
+.signal.op{left:1%;top:28px;transform:rotate(-1.2deg)}
+.signal.sales{left:6%;top:246px;transform:rotate(.8deg)}
+.signal.finance{right:1%;top:96px;transform:rotate(1.1deg)}
+.signal.op:hover{transform:translateY(-4px) rotate(-1.2deg)}
+.signal.sales:hover{transform:translateY(-4px) rotate(.8deg)}
+.signal.finance:hover{transform:translateY(-4px) rotate(1.1deg)}
+.signal small{margin-bottom:8px}
+.signal strong{font-size:15px}
+.signal .detail{font-size:12px;color:#707070}
+.core{top:60px;width:218px;min-height:218px;border-radius:28px}
+.core-kicker{color:#8d8d8d}
+.core-status{font-size:12px;color:#d0d0c8}
+.core-status span{color:#777}
+.outcome{bottom:10px;width:min(540px,calc(100% - 360px));padding:20px 23px;border-radius:20px;box-shadow:0 30px 90px rgba(0,0,0,.54),0 0 70px rgba(198,245,45,.06)}
+.outcome h3{font-size:24px}
+.outcome p{font-size:14px}
+.intelligence-lines path{stroke:#252525;stroke-width:1.2}
+.intelligence-lines .pulse{stroke-width:1.7;stroke-dasharray:6 12}
+
+@media(max-width:900px){
+  .intelligence{min-height:720px;max-width:620px;margin-top:42px}
+  .signal{width:220px;padding:16px 17px}
+  .signal.op{left:0;top:12px}
+  .signal.finance{right:0;top:118px}
+  .signal.sales{left:0;top:245px}
+  .core{top:365px;width:210px;min-height:210px}
+  .outcome{bottom:14px;width:min(560px,calc(100% - 44px));padding:20px 22px}
+}
+
+@media(max-width:680px){
+  /* Mobile is a deliberate composition: three floating tiles, then Agba, then the insight. */
+  .intelligence{min-height:940px;width:100%;max-width:430px;margin-top:38px}
+  .signal{position:absolute;width:calc(100% - 28px);max-width:330px;left:14px!important;right:auto!important;padding:15px 17px;border-radius:16px;background:rgba(15,15,15,.96);box-shadow:0 18px 55px rgba(0,0,0,.42)}
+  .signal.op{top:0;transform:rotate(-.7deg)}
+  .signal.sales{top:136px;transform:rotate(.5deg)}
+  .signal.finance{top:272px;transform:rotate(-.45deg)}
+  .signal.op:hover,.signal.sales:hover,.signal.finance:hover{transform:none}
+  .signal small{font-size:9px;margin-bottom:7px}
+  .signal strong{font-size:14px;line-height:1.35}
+  .signal .detail{font-size:11px;line-height:1.45;margin-top:5px}
+  .signal:after{right:15px;top:16px}
+  .core{top:430px;width:190px;min-height:190px;border-radius:25px}
+  .core-brand{font-size:30px}
+  .core-dot{margin:13px 0 8px}
+  .core-kicker{font-size:9px}
+  .core-status{font-size:11px}
+  .outcome{bottom:0;width:calc(100% - 4px);padding:19px 18px;border-radius:18px}
+  .outcome-top{font-size:9px}
+  .outcome h3{font-size:21px;margin-top:9px}
+  .outcome p{font-size:13px;line-height:1.55}
+  .outcome-foot{font-size:9px;gap:12px;align-items:flex-start}
+  .outcome-foot .now{white-space:nowrap}
+  .intelligence-lines{display:none}
+}
+
+@media(max-width:380px){
+  .intelligence{min-height:900px}
+  .signal{width:calc(100% - 12px);left:6px!important}
+  .signal.sales{top:132px}
+  .signal.finance{top:264px}
+  .core{top:415px;width:178px;min-height:178px}
+  .outcome{padding:17px 15px}
+  .outcome h3{font-size:20px}
+  .outcome-foot{flex-direction:column}
+}
