@@ -6,6 +6,7 @@ const url=()=>Deno.env.get("SUPABASE_URL")||"";
 const key=()=>Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"";
 const token=()=>Deno.env.get("TELEGRAM_BOT_TOKEN")||"";
 const api=()=>`https://api.telegram.org/bot${token()}`;
+async function heartbeat(sb:any,status="healthy",success=false,errorMessage?:string){await sb.from("agba_system_components").update({status,last_heartbeat_at:new Date().toISOString(),...(success?{last_success_at:new Date().toISOString()}:{}),...(errorMessage?{metadata:{last_error:errorMessage.slice(0,500)}}:{})}).eq("key","telegram-delivery").then((r:any)=>{if(r.error)console.error("component_heartbeat_failed",r.error)}).catch((e:any)=>console.error("component_heartbeat_failed",e))}
 
 async function telegram(method:string,body:Record<string,unknown>){
   const r=await fetch(`${api()}/${method}`,{method:"POST",headers,body:JSON.stringify(body)});
@@ -32,15 +33,15 @@ Deno.serve(async(req)=>{
   if(req.method!=="POST")return json({ok:true,service:"agba-telegram-delivery-worker"});
   if(!url()||!key())return json({error:"worker_not_configured"},500);
   if(!token())return json({error:"telegram_not_configured"},500);
-  const sb=createClient(url(),key(),{auth:{autoRefreshToken:false,persistSession:false}});
+  const sb=createClient(url(),key(),{auth:{autoRefreshToken:false,persistSession:false}});await heartbeat(sb);
   let body:any={};try{body=await req.json()}catch{}
   const expected=await secret(sb).catch(e=>{console.error("delivery_secret_lookup_failed",e);return""});
   if(!expected||body?.secret!==expected)return json({error:"forbidden"},403);
   const workerId=`telegram-delivery-${crypto.randomUUID()}`;
   const {data:claimed,error:claimError}=await sb.rpc("agba_claim_telegram_delivery",{p_worker_id:workerId,p_lease_seconds:120});
-  if(claimError){console.error("delivery_claim_failed",claimError);return json({error:"delivery_claim_failed"},500)}
+  if(claimError){console.error("delivery_claim_failed",claimError);await heartbeat(sb,"warn",false,String(claimError));return json({error:"delivery_claim_failed"},500)}
   const item=claimed?.[0];
-  if(!item)return json({ok:true,processed:0});
+  if(!item){await heartbeat(sb,"healthy",true);return json({ok:true,processed:0});}
   try{
     const payload=item.payload||{};
     const chatId=Number(payload.chat_id??item.chat_id);
@@ -49,12 +50,12 @@ Deno.serve(async(req)=>{
     const messageId=await send(chatId,text);
     const {data:completed,error}=await sb.rpc("agba_complete_telegram_delivery",{p_id:item.id,p_telegram_message_id:messageId});
     if(error)throw error;
-    return json({ok:true,processed:1,delivery_id:item.id,telegram_message_id:messageId,status:completed?.[0]?.status||"sent",attempts:item.attempts});
+    await heartbeat(sb,"healthy",true);return json({ok:true,processed:1,delivery_id:item.id,telegram_message_id:messageId,status:completed?.[0]?.status||"sent",attempts:item.attempts});
   }catch(error){
     const message=error instanceof Error?error.message:String(error);
     const {data:failed,error:failError}=await sb.rpc("agba_fail_telegram_delivery",{p_id:item.id,p_error:message,p_retry_delay_seconds:Math.min(300,Math.max(10,2**Math.min(Number(item.attempts)||1,5)))});
     if(failError)console.error("delivery_failure_state_update_failed",failError);
     console.error("telegram_delivery_failed",{deliveryId:item.id,attempts:item.attempts,message,terminal:failed?.[0]?.status==="dead"});
-    return json({ok:false,processed:0,delivery_id:item.id,attempts:item.attempts,status:failed?.[0]?.status||"failed",error:message},500);
+    await heartbeat(sb,"warn",false,message);return json({ok:false,processed:0,delivery_id:item.id,attempts:item.attempts,status:failed?.[0]?.status||"failed",error:message},500);
   }
 });
