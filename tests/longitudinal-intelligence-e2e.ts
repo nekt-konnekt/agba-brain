@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const url = Deno.env.get("SUPABASE_URL");
 const anon = Deno.env.get("SUPABASE_ANON_KEY");
 const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-if (!url || !anon || !serviceRole) throw new Error("Set SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY");
+if (!url || !anon || !serviceRole) throw new Error("Set required Supabase test environment variables");
 
 const admin = createClient(url, serviceRole, { auth: { autoRefreshToken: false, persistSession: false } });
 const email = `agba-longitudinal-${Date.now()}@gmail.com`;
@@ -19,8 +19,8 @@ const cleanup = async () => {
 
 try {
   const created = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: "Agba Longitudinal CEO" } });
-  if (created.error || !created.user) throw new Error(`CEO creation failed: ${created.error?.message ?? "no user"}`);
-  authUserId = created.user.id;
+  if (created.error || !created.data.user) throw new Error(`CEO creation failed: ${created.error?.message ?? "no user"}`);
+  authUserId = created.data.user.id;
 
   const supabase = createClient(url, anon);
   const signedIn = await supabase.auth.signInWithPassword({ email, password });
