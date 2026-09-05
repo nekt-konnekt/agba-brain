@@ -33,6 +33,6 @@
     { "source": "/agba-wordmark.svg", "destination": "/agba-wordmark.svg" },
     { "source": "/robots.txt", "destination": "/robots.txt" },
     { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
-    { "source": "/", "destination": "/index.html" }
+    { "source": "/", "destination": "/index-v2.html" }
   ]
 }
