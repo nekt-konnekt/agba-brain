@@ -30,6 +30,7 @@
     { "source": "/decisions", "destination": "/office.html" },
     { "source": "/superadmin", "destination": "/superadmin.html" },
     { "source": "/for-ceos", "destination": "/for-ceos.html" },
+    { "source": "/executive-operating-intelligence", "destination": "/executive-operating-intelligence.html" },
     { "source": "/app.js", "destination": "/app.js" },
     { "source": "/superadmin.js", "destination": "/superadmin.js" },
     { "source": "/styles.css", "destination": "/styles.css" },
