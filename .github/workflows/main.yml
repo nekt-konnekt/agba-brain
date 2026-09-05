@@ -4,8 +4,30 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'actions/**'
+      - 'ask/**'
+      - 'decisions/**'
+      - 'departments/**'
+      - 'office/**'
+      - 'supabase/**'
+      - 'tests/**'
+      - 'server.js'
+      - 'package.json'
+      - '.github/workflows/main.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'actions/**'
+      - 'ask/**'
+      - 'decisions/**'
+      - 'departments/**'
+      - 'office/**'
+      - 'supabase/**'
+      - 'tests/**'
+      - 'server.js'
+      - 'package.json'
+      - '.github/workflows/main.yml'
 
 concurrency:
   group: agba-e2e-${{ github.ref }}
