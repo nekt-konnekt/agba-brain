@@ -6,3 +6,21 @@
 .brand-mark span{color:#F7F7F3!important}
 .brand-mark i{font-style:normal!important;color:#C6F52D!important}
 .brand-mark img,.brand-mark svg{display:none!important}
+
+/* Readability system: keep Agba's visual language, increase executive scanability. */
+.nav-item{font-size:14px;padding:12px 13px}
+.connection{font-size:12px}
+.profile strong{font-size:13px}.profile span{font-size:11px}
+.topbar{margin-bottom:28px}.eyebrow,.card-label{font-size:11px;letter-spacing:.12em}
+.topbar h1{font-size:clamp(34px,3vw,42px)}
+.ghost,.primary,.text-btn,.suggestions button,.command-suggestions button{font-size:13px}
+.command-bar{padding:25px}.command-bar h2{font-size:23px}.command-bar p{font-size:14px;line-height:1.6}.command-bar input{font-size:15px;padding:14px 15px;min-height:48px}.command-suggestions button{font-size:12px;padding:8px 11px}
+.pulse-card{padding:26px}.pulse-value{font-size:clamp(29px,3vw,36px);line-height:1.12}.pulse-card p{font-size:14px;line-height:1.6}.signal-row{font-size:12px}.signal-row b{font-size:16px}.pulse-card small{font-size:11px}
+.panel{padding:24px}.panel-head h2,.page-section-head h2{font-size:20px}.item{padding:16px 13px}.item-title{font-size:14px}.item-desc{font-size:13px;line-height:1.55}.badge{font-size:9px;padding:5px 8px}
+.department{padding:17px}.department-name{font-size:13px}.department-score{font-size:22px}.department-note{font-size:11px}.decision{padding:17px}.decision time{font-size:10px}.decision strong{font-size:13px}.decision p{font-size:11px;line-height:1.55}
+.conversation-head{padding:28px}.conversation-head h2{font-size:23px}.conversation-head p{font-size:13px;line-height:1.5}.chat-messages{padding:26px}.message p{font-size:14px;line-height:1.6}.message small{font-size:10px}.suggestions button{font-size:12px}
+.page-section-head p{font-size:13px;line-height:1.6}.action-card,.dept-full{padding:21px}.action-card h3{font-size:15px}.action-card p,.dept-full p{font-size:13px;line-height:1.6}.action-controls button{font-size:11px;padding:9px 12px}
+.ceo-outcome p{font-size:13px;line-height:1.6}.loop-steps span{font-size:11px;padding:13px}.loop-steps b{font-size:13px}.loop-steps small{font-size:10px}
+.office-toast{font-size:12px}
+@media(max-width:760px){.nav-item span{font-size:15px}.main{padding:24px 17px}.topbar h1{font-size:30px}.pulse-value{font-size:27px}.panel{padding:20px}.conversation-head{padding:22px}.chat-messages{padding:20px}.message p{font-size:13px}.actions-grid,.departments-full{gap:14px}}
+@media(max-width:520px){.topbar h1{font-size:28px}.command-bar{padding:20px}.command-bar h2{font-size:21px}.pulse-value{font-size:25px}.item-title{font-size:14px}.item-desc{font-size:12.5px}}
