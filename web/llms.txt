@@ -1,31 +1,39 @@
 # Agba
 
-> Agba is an AI operating brain for businesses.
+> Agba is executive operating intelligence for growing businesses. It connects signals across departments, remembers company context, detects what changed, and tells leadership what deserves attention.
 
-## What Agba is
-Agba connects business activity into a governed operating picture. It turns reports and operational records into company memory, identifies what matters, and helps people decide and act.
-
-## Who Agba is for
-Agba is designed for CEOs and department heads who need a reliable operating picture of the business.
-
-## What Agba does
-- Understands business reports and operational activity.
-- Connects signals across departments and business functions.
-- Maintains governed company memory.
-- Surfaces risks, priorities, changes, exceptions and unresolved issues.
-- Answers questions using company context and evidence.
-- Tracks decisions and actions.
-- Produces executive-level business briefings.
-
-## What makes Agba different
-Agba is not positioned as a generic chatbot or generic analytics dashboard. Its core operating loop is: Report → Normalize → Store → Understand → Connect → Reason → Brief → Act → Learn.
-
-## Security and access
-Authorization is enforced by PostgreSQL and application services. The AI model does not decide whether a user is allowed to see a record. CEO and Department Head access is governed by role and company policy.
-
-## Public pages
+## Primary website
 - https://agba.work/
-- https://agba.work/for-ceos
 
-## Canonical description
-Agba is the AI operating brain for your business. It connects reports, orders, payments, customers, suppliers, issues and decisions into one operating picture so you know what matters and what to do next.
+## What is Agba?
+Agba is an intelligence layer for growing companies. Department heads report what is happening in their areas, and Agba connects those updates across the business so leadership can understand the whole company in context.
+
+## What does Agba do?
+- Connects Finance, Sales, Operations, HR and other department signals.
+- Remembers important company context across reports and conversations.
+- Detects relationships, changes and business risks that span departments.
+- Surfaces what deserves executive attention.
+- Helps leadership move from reporting to decisions and follow-up.
+
+## How does Agba work?
+Agba follows an operating loop: Report, Remember, Connect, Act. A department update becomes more useful when Agba can relate it to earlier context and signals from other parts of the company.
+
+## Who is Agba for?
+Agba is designed for founders, CEOs, managing directors and operators of growing businesses whose information is becoming fragmented across departments.
+
+## Does Agba replace department reporting?
+No. Agba is designed to make existing reporting more useful. Teams can report naturally, including through Telegram, while Agba connects the information for leadership.
+
+## Can teams use Telegram with Agba?
+Yes. Telegram can be used as a reporting and conversational surface. Agba can retain the relevant company context and connect updates across teams.
+
+## What makes Agba different from a dashboard?
+Agba is not positioned as a conventional dashboard of vanity metrics. Its purpose is to connect company signals, preserve context, identify what changed and surface decisions or exceptions that deserve attention.
+
+## Executive example
+Operations reports that a supplier is three days late. Sales has already promised the customer a Friday delivery. Finance confirms that the customer has paid. Agba connects those signals and surfaces the delivery risk so leadership can act before the issue becomes a surprise.
+
+## Key pages
+- [Agba homepage](https://agba.work/): Product overview and executive intelligence proposition.
+- [Agba for CEOs](https://agba.work/for-ceos): Detailed explanation of Agba for growing businesses, including common questions and how the operating loop works.
+- [Start with Agba](https://agba.work/signup): Account creation.
