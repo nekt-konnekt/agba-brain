@@ -11,7 +11,7 @@ const HOST = '0.0.0.0';
 
 app.use(express.json());
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'agba-brain' }));
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index-v2.html')));
 app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signup.html')));
 app.get('/signup/account', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signup-account.html')));
 app.get('/signin', (req, res) => res.sendFile(path.join(__dirname, 'web', 'signin.html')));
@@ -45,5 +45,5 @@ app.use('/departments', express.static(path.join(__dirname, 'departments')));
 app.use('/office', express.static(path.join(__dirname, 'office')));
 app.use(express.static(path.join(__dirname, 'web')));
 app.use(express.static(__dirname));
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index.html')));
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'web', 'index-v2.html')));
 app.listen(PORT, HOST, () => console.log(`Agba server running at http://${HOST}:${PORT}`));
