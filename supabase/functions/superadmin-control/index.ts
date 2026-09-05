@@ -1,159 +1,59 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
-const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"GET, POST, OPTIONS"};
+const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...corsHeaders,"Content-Type":"application/json"}});
+const ok=(v:any)=>v?.data??[];
 
-async function actor(req: Request, admin: any) {
-  const auth = req.headers.get("Authorization");
-  if (!auth) return { error: json({ error: "missing_authorization" }, 401) };
-  const token = auth.replace(/^Bearer\s+/i, "");
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) return { error: json({ error: "invalid_authorization" }, 401) };
-  const { data: platformAdmin, error: adminError } = await admin.from("agba_platform_admins").select("id,active,email").eq("auth_user_id", user.id).eq("active", true).maybeSingle();
-  if (adminError) return { error: json({ error: "platform_admin_lookup_failed", detail: adminError.message }, 500) };
-  if (!platformAdmin) return { error: json({ error: "platform_admin_required" }, 403) };
-  return { user, platformAdmin };
+async function authUser(req:Request,admin:any){const h=req.headers.get("Authorization");if(!h)return{error:json({error:"missing_authorization"},401)};const token=h.replace(/^Bearer\s+/i,"");const {data:{user},error}=await admin.auth.getUser(token);if(error||!user)return{error:json({error:"invalid_authorization"},401)};return{user};}
+async function actor(req:Request,admin:any){const a=await authUser(req,admin);if(a.error)return a;const {data:pa,error}=await admin.from("agba_platform_admins").select("id,active,email").eq("auth_user_id",a.user.id).eq("active",true).maybeSingle();if(error)return{error:json({error:"platform_admin_lookup_failed",detail:error.message},500)};if(!pa)return{error:json({error:"platform_admin_required"},403)};return{user:a.user,platformAdmin:pa};}
+
+async function bootstrap(req:Request,admin:any){const a=await authUser(req,admin);if(a.error)return a.error;const configured=(Deno.env.get("SUPERADMIN_EMAIL")||"").trim().toLowerCase();if(!configured)return json({error:"bootstrap_not_configured"},503);if((a.user.email||"").trim().toLowerCase()!==configured)return json({error:"superadmin_bootstrap_not_authorized"},403);const {count,error}=await admin.from("agba_platform_admins").select("id",{count:"exact",head:true});if(error)return json({error:"platform_admin_count_failed",detail:error.message},500);if((count??0)>0)return json({error:"platform_admin_already_configured"},409);const {data:inserted,error:ie}=await admin.from("agba_platform_admins").insert({auth_user_id:a.user.id,email:a.user.email,active:true}).select("id,auth_user_id,email,active,created_at").single();if(ie)return json({error:"platform_admin_bootstrap_failed",detail:ie.message},500);await admin.from("agba_audit_logs").insert({organization_id:null,actor_auth_user_id:a.user.id,action:"superadmin.bootstrap.completed",entity_type:"platform_admin",entity_id:inserted.id,metadata:{email:a.user.email}});return json({ok:true,platform_admin:inserted});}
+
+async function overview(admin:any){
+ const [orgs,users,depts,reports,metrics,tasks,queries,actions,decisions,briefings,reasoning,state,bindings,inbox,delivery,components,incidents,recoveries,audit,flags,controls,overrides]=await Promise.all([
+  admin.from("agba_organizations").select("id,name,slug,timezone,currency_code,settings,created_at,updated_at,setup_completed_at").order("name"),
+  admin.from("agba_users").select("id,organization_id,auth_user_id,role_id,department_id,full_name,email,active,created_at,updated_at,agba_roles(name,code),agba_departments(name)"),
+  admin.from("agba_departments").select("id,organization_id,name,active"),
+  admin.from("agba_reports").select("id,organization_id,status,created_at,processed_at,report_date"),
+  admin.from("agba_metrics").select("id,organization_id,department_id,name,key,value_numeric,value_text,measured_on,created_at"),
+  admin.from("agba_tasks").select("id,organization_id,status,created_at,updated_at,due_at"),
+  admin.from("agba_ceo_queries").select("id,organization_id,created_at"),
+  admin.from("agba_actions").select("id,organization_id,status,created_at,updated_at"),
+  admin.from("agba_decisions").select("id,organization_id,created_at,decided_at"),
+  admin.from("agba_briefings").select("id,organization_id,created_at,briefing_date,status"),
+  admin.from("agba_reasoning_items").select("id,organization_id,created_at,severity,type"),
+  admin.from("agba_state_items").select("id,organization_id,status,last_seen_at,created_at"),
+  admin.from("agba_telegram_bindings").select("chat_id,organization_id,agba_user_id,telegram_username,role_code,updated_at"),
+  admin.from("agba_telegram_update_inbox").select("id,organization_id,status,attempts,max_attempts,last_error,received_at,next_attempt_at,locked_at,worker_id").order("received_at",{ascending:false}).limit(50),
+  admin.from("agba_telegram_delivery_outbox").select("id,organization_id,status,attempts,max_attempts,last_error,created_at,next_attempt_at,locked_at,worker_id").order("created_at",{ascending:false}).limit(50),
+  admin.from("agba_system_components").select("id,key,name,category,status,last_heartbeat_at,last_success_at,last_failure_at,failure_count,metadata,updated_at").order("category").order("name"),
+  admin.from("agba_system_incidents").select("id,component_id,severity,status,title,description,detected_at,resolved_at,metadata,created_at,updated_at,agba_system_components(key,name)").order("detected_at",{ascending:false}).limit(50),
+  admin.from("agba_recovery_actions").select("id,key,name,description,risk_level,requires_confirmation,enabled,created_at").eq("enabled",true).order("name"),
+  admin.from("agba_audit_logs").select("id,organization_id,actor_auth_user_id,action,entity_type,entity_id,metadata,created_at").order("created_at",{ascending:false}).limit(50),
+  admin.from("agba_platform_feature_flags").select("id,key,name,description,default_enabled,enabled,metadata,updated_at").order("name"),
+  admin.from("agba_platform_tenant_controls").select("organization_id,status,plan,notes,limits,metadata,updated_at"),
+  admin.from("agba_platform_tenant_feature_overrides").select("organization_id,feature_flag_id,enabled,updated_at")
+ ]);
+ for(const q of [orgs,users,depts,reports,metrics,tasks,queries,actions,decisions,briefings,reasoning,state,bindings,inbox,delivery,components,incidents,recoveries,audit,flags,controls,overrides])if(q.error)return{error:q.error.message};
+ const data={orgs:ok(orgs),users:ok(users),depts:ok(depts),reports:ok(reports),metrics:ok(metrics),tasks:ok(tasks),queries:ok(queries),actions:ok(actions),decisions:ok(decisions),briefings:ok(briefings),reasoning:ok(reasoning),state:ok(state),bindings:ok(bindings),inbox:ok(inbox),delivery:ok(delivery),components:ok(components),incidents:ok(incidents),recovery_actions:ok(recoveries),audit:ok(audit),flags:ok(flags),controls:ok(controls),overrides:ok(overrides)};
+ const byOrg=new Map<string,any>();for(const o of data.orgs)byOrg.set(o.id,{...o,users:0,departments:0,reports:0,metrics:0,tasks:0,queries:0,actions:0,decisions:0,briefings:0,reasoning:0,state:0,telegram:0,last_activity:null});
+ const add=(arr:any[],field:string,dateField:string="created_at")=>{for(const x of arr){const r=byOrg.get(x.organization_id);if(!r)continue;r[field]++;const d=x[dateField]||x.updated_at||x.created_at;if(d&&(!r.last_activity||new Date(d)>new Date(r.last_activity)))r.last_activity=d;}};
+ add(data.users,"users");add(data.depts,"departments");add(data.reports,"reports","created_at");add(data.metrics,"metrics");add(data.tasks,"tasks","updated_at");add(data.queries,"queries");add(data.actions,"actions","updated_at");add(data.decisions,"decisions");add(data.briefings,"briefings");add(data.reasoning,"reasoning");add(data.state,"state","last_seen_at");add(data.bindings,"telegram","updated_at");
+ const failedInbox=data.inbox.filter((x:any)=>["failed","dead"].includes(x.status));const failedDelivery=data.delivery.filter((x:any)=>["failed","dead"].includes(x.status));
+ const total={organizations:data.orgs.length,users:data.users.length,activeUsers:data.users.filter((x:any)=>x.active).length,departments:data.depts.filter((x:any)=>x.active!==false).length,reports:data.reports.length,metrics:data.metrics.length,tasks:data.tasks.length,queries:data.queries.length,actions:data.actions.length,decisions:data.decisions.length,briefings:data.briefings.length,reasoning:data.reasoning.length,state:data.state.length,telegramBindings:data.bindings.length,telegramFailed:failedInbox.length+failedDelivery.length,openIncidents:data.incidents.filter((x:any)=>x.status==="open").length};
+ return{summary:total,organizations:Array.from(byOrg.values()),users:data.users,components:data.components,incidents:data.incidents,recovery_actions:data.recovery_actions,telegram:{inbox:data.inbox,delivery:data.delivery,failed_inbox:failedInbox.length,failed_delivery:failedDelivery.length},audit:data.audit,feature_flags:data.flags,tenant_controls:data.controls,tenant_overrides:data.overrides,generated_at:new Date().toISOString()};
 }
 
-async function authenticatedUser(req: Request, admin: any) {
-  const auth = req.headers.get("Authorization");
-  if (!auth) return { error: json({ error: "missing_authorization" }, 401) };
-  const token = auth.replace(/^Bearer\s+/i, "");
-  const { data: { user }, error } = await admin.auth.getUser(token);
-  if (error || !user) return { error: json({ error: "invalid_authorization" }, 401) };
-  return { user };
-}
+async function audit(admin,user,action,entityType,entityId,organizationId,metadata={}){await admin.from("agba_audit_logs").insert({organization_id:organizationId??null,actor_auth_user_id:user.id,action,entity_type:entityType,entity_id:entityId??null,metadata});}
+async function mutate(admin,user,body:any){const op=String(body.operation||"");
+ if(op==="set_feature_flag"){const id=String(body.feature_flag_id);const enabled=Boolean(body.enabled);const {data,error}=await admin.from("agba_platform_feature_flags").update({enabled,updated_at:new Date().toISOString()}).eq("id",id).select("id,key,enabled").single();if(error)throw error;await audit(admin,user,"superadmin.feature_flag.updated","feature_flag",id,null,{enabled});return data;}
+ if(op==="set_tenant_status"){const id=String(body.organization_id);const status=String(body.status);if(!["active","trial","suspended","maintenance"].includes(status))throw new Error("invalid_tenant_status");const {data,error}=await admin.from("agba_platform_tenant_controls").upsert({organization_id:id,status,updated_at:new Date().toISOString()},{onConflict:"organization_id"}).select("organization_id,status,plan,updated_at").single();if(error)throw error;await audit(admin,user,"superadmin.tenant.status_updated","organization",id,id,{status});return data;}
+ if(op==="set_tenant_plan"){const id=String(body.organization_id);const plan=String(body.plan||"standard");const {data,error}=await admin.from("agba_platform_tenant_controls").upsert({organization_id:id,plan,updated_at:new Date().toISOString()},{onConflict:"organization_id"}).select("organization_id,status,plan,updated_at").single();if(error)throw error;await audit(admin,user,"superadmin.tenant.plan_updated","organization",id,id,{plan});return data;}
+ if(op==="set_tenant_feature"){const org=String(body.organization_id),flag=String(body.feature_flag_id),enabled=Boolean(body.enabled);const {data,error}=await admin.from("agba_platform_tenant_feature_overrides").upsert({organization_id:org,feature_flag_id:flag,enabled,actor_auth_user_id:user.id,updated_at:new Date().toISOString()},{onConflict:"organization_id,feature_flag_id"}).select("organization_id,feature_flag_id,enabled,updated_at").single();if(error)throw error;await audit(admin,user,"superadmin.tenant.feature_override_updated","organization",org,org,{feature_flag_id:flag,enabled});return data;}
+ if(op==="set_user_active"){const id=String(body.user_id),active=Boolean(body.active);const {data:u,error:ue}=await admin.from("agba_users").select("id,organization_id,auth_user_id,email").eq("id",id).single();if(ue)throw ue;if(u.auth_user_id){const {error:ae}=await admin.auth.admin.updateUserById(u.auth_user_id,{ban_duration:active?"none":"876000h"});if(ae)throw ae;}const {data,error}=await admin.from("agba_users").update({active,updated_at:new Date().toISOString()}).eq("id",id).select("id,organization_id,email,active").single();if(error)throw error;await audit(admin,user,`superadmin.user.${active?"activated":"suspended"}`,"agba_user",id,u.organization_id,{active});return data;}
+ if(op==="set_user_role"){const id=String(body.user_id),role=String(body.role_id);const {data:u,error:ue}=await admin.from("agba_users").update({role_id:role,updated_at:new Date().toISOString()}).eq("id",id).select("id,organization_id,role_id").single();if(ue)throw ue;await audit(admin,user,"superadmin.user.role_updated","agba_user",id,u.organization_id,{role_id:role});return u;}
+ throw new Error("unsupported_operation");}
 
-async function bootstrap(req: Request, admin: any) {
-  const a = await authenticatedUser(req, admin);
-  if (a.error) return a.error;
+async function recover(admin,user,key:string,input:any){const {data:action,error}=await admin.from("agba_recovery_actions").select("id,key,name,risk_level,requires_confirmation,enabled").eq("key",key).eq("enabled",true).maybeSingle();if(error)throw error;if(!action)throw new Error("recovery_action_not_found");if(action.requires_confirmation&&input?.confirmed!==true)throw new Error("confirmation_required");const {data:execution,error:ee}=await admin.from("agba_recovery_executions").insert({recovery_action_id:action.id,actor_auth_user_id:user.id,status:"started",input:input??{}}).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();if(ee)throw ee;let output:any={};try{if(key==="retry_telegram_inbox"){const id=String(input?.id||"");if(!id)throw new Error("inbox_id_required");const {data,rowError}=await admin.from("agba_telegram_update_inbox").update({status:"queued",locked_at:null,worker_id:null,next_attempt_at:new Date().toISOString(),last_error:null}).eq("id",id).select("id,organization_id,status,attempts,next_attempt_at").maybeSingle();if(rowError)throw rowError;if(!data)throw new Error("inbox_item_not_found");output=data;}else if(key==="retry_telegram_delivery"){const id=String(input?.id||"");if(!id)throw new Error("delivery_id_required");const {data,rowError}=await admin.from("agba_telegram_delivery_outbox").update({status:"pending",locked_at:null,worker_id:null,next_attempt_at:new Date().toISOString(),last_error:null}).eq("id",id).select("id,organization_id,status,attempts,next_attempt_at").maybeSingle();if(rowError)throw rowError;if(!data)throw new Error("delivery_item_not_found");output=data;}else if(key==="run_component_health_check"){const k=String(input?.component_key||"");const {data,rowError}=await admin.from("agba_system_components").select("id,key,name,status,last_success_at,last_failure_at,failure_count").eq("key",k).maybeSingle();if(rowError)throw rowError;if(!data)throw new Error("component_not_found");output={component:data,checked_at:new Date().toISOString()};}else throw new Error("unsupported_recovery_action");const completedAt=new Date().toISOString();const {data:updated,error:ue}=await admin.from("agba_recovery_executions").update({status:"completed",output,completed_at:completedAt}).eq("id",execution.id).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();if(ue)throw ue;await audit(admin,user,"superadmin.recovery.completed","recovery_execution",execution.id,null,{key,output});return updated;}catch(e){const err={message:e instanceof Error?e.message:"superadmin_recovery_failed"};await admin.from("agba_recovery_executions").update({status:"failed",error:err,completed_at:new Date().toISOString()}).eq("id",execution.id);await audit(admin,user,"superadmin.recovery.failed","recovery_execution",execution.id,null,{key,error:err});throw e;}}
 
-  const configuredEmail = (Deno.env.get("SUPERADMIN_EMAIL") || "").trim().toLowerCase();
-  if (!configuredEmail) return json({ error: "bootstrap_not_configured" }, 503);
-
-  const email = (a.user.email || "").trim().toLowerCase();
-  if (!email || email !== configuredEmail) return json({ error: "superadmin_bootstrap_not_authorized" }, 403);
-
-  const { count, error: countError } = await admin.from("agba_platform_admins").select("id", { count: "exact", head: true });
-  if (countError) return json({ error: "platform_admin_count_failed", detail: countError.message }, 500);
-  if ((count ?? 0) > 0) return json({ error: "platform_admin_already_configured" }, 409);
-
-  const { data: inserted, error: insertError } = await admin.from("agba_platform_admins").insert({
-    auth_user_id: a.user.id,
-    email: a.user.email,
-    active: true,
-  }).select("id,auth_user_id,email,active,created_at").single();
-  if (insertError) return json({ error: "platform_admin_bootstrap_failed", detail: insertError.message }, 500);
-
-  await admin.from("agba_audit_logs").insert({
-    organization_id: null,
-    actor_auth_user_id: a.user.id,
-    action: "superadmin.bootstrap.completed",
-    entity_type: "platform_admin",
-    entity_id: inserted.id,
-    metadata: { email: a.user.email },
-  });
-
-  return json({ ok: true, platform_admin: inserted });
-}
-
-async function overview(admin: any) {
-  const [components, incidents, recoveries, inbox, delivery, audit] = await Promise.all([
-    admin.from("agba_system_components").select("id,key,name,category,status,last_heartbeat_at,last_success_at,last_failure_at,failure_count,metadata,updated_at").order("category").order("name"),
-    admin.from("agba_system_incidents").select("id,component_id,severity,status,title,description,detected_at,resolved_at,metadata,created_at,updated_at,agba_system_components(key,name)").order("detected_at", { ascending: false }).limit(30),
-    admin.from("agba_recovery_actions").select("id,key,name,description,risk_level,requires_confirmation,enabled,created_at").eq("enabled", true).order("name"),
-    admin.from("agba_telegram_update_inbox").select("id,organization_id,status,attempts,max_attempts,last_error,received_at,next_attempt_at,locked_at,worker_id").order("received_at", { ascending: false }).limit(25),
-    admin.from("agba_telegram_delivery_outbox").select("id,organization_id,status,attempts,max_attempts,last_error,created_at,next_attempt_at,locked_at,worker_id").order("created_at", { ascending: false }).limit(25),
-    admin.from("agba_audit_logs").select("id,organization_id,actor_auth_user_id,action,entity_type,entity_id,metadata,created_at").order("created_at", { ascending: false }).limit(30),
-  ]);
-  for (const q of [components, incidents, recoveries, inbox, delivery, audit]) if (q.error) return { error: q.error.message };
-  const failedInbox = (inbox.data ?? []).filter((x: any) => ["failed", "dead"].includes(x.status));
-  const failedDelivery = (delivery.data ?? []).filter((x: any) => ["failed", "dead"].includes(x.status));
-  return { components: components.data ?? [], incidents: incidents.data ?? [], recovery_actions: recoveries.data ?? [], telegram: { inbox: inbox.data ?? [], delivery: delivery.data ?? [], failed_inbox: failedInbox.length, failed_delivery: failedDelivery.length }, audit: audit.data ?? [] };
-}
-
-async function recover(admin: any, user: any, key: string, input: any) {
-  const { data: action, error: actionError } = await admin.from("agba_recovery_actions").select("id,key,name,risk_level,requires_confirmation,enabled").eq("key", key).eq("enabled", true).maybeSingle();
-  if (actionError) throw actionError;
-  if (!action) throw new Error("recovery_action_not_found");
-  if (action.requires_confirmation && input?.confirmed !== true) throw new Error("confirmation_required");
-
-  const { data: execution, error: executionError } = await admin.from("agba_recovery_executions").insert({
-    recovery_action_id: action.id,
-    actor_auth_user_id: user.id,
-    status: "started",
-    input: input ?? {},
-  }).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();
-  if (executionError) throw executionError;
-
-  let output: any = {};
-  try {
-    if (key === "retry_telegram_inbox") {
-      const id = String(input?.id || "");
-      if (!id) throw new Error("inbox_id_required");
-      const { data: row, error } = await admin.from("agba_telegram_update_inbox").update({ status: "queued", locked_at: null, worker_id: null, next_attempt_at: new Date().toISOString(), last_error: null }).eq("id", id).select("id,status,attempts,next_attempt_at").maybeSingle();
-      if (error) throw error;
-      if (!row) throw new Error("inbox_item_not_found");
-      output = row;
-    } else if (key === "retry_telegram_delivery") {
-      const id = String(input?.id || "");
-      if (!id) throw new Error("delivery_id_required");
-      const { data: row, error } = await admin.from("agba_telegram_delivery_outbox").update({ status: "pending", locked_at: null, worker_id: null, next_attempt_at: new Date().toISOString(), last_error: null }).eq("id", id).select("id,status,attempts,next_attempt_at").maybeSingle();
-      if (error) throw error;
-      if (!row) throw new Error("delivery_item_not_found");
-      output = row;
-    } else if (key === "run_component_health_check") {
-      const componentKey = String(input?.component_key || "");
-      if (!componentKey) throw new Error("component_key_required");
-      const { data: component, error } = await admin.from("agba_system_components").select("id,key,name,status,last_heartbeat_at,last_success_at,last_failure_at,failure_count,metadata").eq("key", componentKey).maybeSingle();
-      if (error) throw error;
-      if (!component) throw new Error("component_not_found");
-      output = { component, checked_at: new Date().toISOString(), note: "Registry health check completed; live provider probing is component-specific." };
-    } else if (key === "replay_webhook") {
-      throw new Error("webhook_replay_requires_explicit_event_id_and_is_not_enabled_yet");
-    } else {
-      throw new Error("unsupported_recovery_action");
-    }
-
-    const completedAt = new Date().toISOString();
-    const { data: updated, error: updateError } = await admin.from("agba_recovery_executions").update({ status: "completed", output, completed_at: completedAt }).eq("id", execution.id).select("id,recovery_action_id,status,input,output,error,started_at,completed_at").single();
-    if (updateError) throw updateError;
-
-    await admin.from("agba_audit_logs").insert({ organization_id: null, actor_auth_user_id: user.id, action: "superadmin.recovery.completed", entity_type: "recovery_execution", entity_id: execution.id, metadata: { key, recovery_action_id: action.id, input: { ...input, confirmed: undefined }, output } });
-    return updated;
-  } catch (e) {
-    const error = { message: e instanceof Error ? e.message : "superadmin_recovery_failed" };
-    const completedAt = new Date().toISOString();
-    await admin.from("agba_recovery_executions").update({ status: "failed", error, completed_at: completedAt }).eq("id", execution.id);
-    await admin.from("agba_audit_logs").insert({ organization_id: null, actor_auth_user_id: user.id, action: "superadmin.recovery.failed", entity_type: "recovery_execution", entity_id: execution.id, metadata: { key, recovery_action_id: action.id, input: { ...input, confirmed: undefined }, error } });
-    throw e;
-  }
-}
-
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return json({ error: "server_configuration_error" }, 500);
-  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
-
-  try {
-    let body: any = null;
-    if (req.method === "POST") body = await req.json();
-    if (body?.operation === "bootstrap") return await bootstrap(req, admin);
-
-    const a = await actor(req, admin);
-    if (a.error) return a.error;
-    if (req.method === "GET") return json(await overview(admin));
-    if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    if (body?.operation === "overview") return json(await overview(admin));
-    if (body?.operation === "recover") return json({ execution: await recover(admin, a.user, String(body.key || ""), body.input || {}) });
-    return json({ error: "unsupported_operation" }, 400);
-  } catch (e) {
-    return json({ error: e instanceof Error ? e.message : "superadmin_operation_failed" }, 400);
-  }
-});
+Deno.serve(async req=>{if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");if(!url||!key)return json({error:"server_configuration_error"},500);const admin=createClient(url,key,{auth:{autoRefreshToken:false,persistSession:false}});try{let body:any=null;if(req.method==="POST")body=await req.json();if(body?.operation==="bootstrap")return bootstrap(req,admin);const a=await actor(req,admin);if(a.error)return a.error;if(req.method==="GET")return json(await overview(admin));if(req.method!=="POST")return json({error:"method_not_allowed"},405);if(body?.operation==="overview")return json(await overview(admin));if(body?.operation==="recover")return json({execution:await recover(admin,a.user,String(body.key||""),body.input||{})});return json(await mutate(admin,a.user,body));}catch(e){return json({error:e instanceof Error?e.message:"superadmin_operation_failed"},400)}});
