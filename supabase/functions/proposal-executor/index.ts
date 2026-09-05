@@ -28,13 +28,15 @@ Deno.serve(async(req)=>{
     if(!proposal.action_id||String(plan.action_id)!==String(proposal.action_id))return json({error:"execution_action_mismatch"},409);
   }
 
+  let telegramBinding:any=null;
   if(tool==="telegram_send"){
     const recipient=String(plan.recipient_agba_user_id||"").trim();
     const message=String(plan.message||"").trim();
     if(!recipient||!message)return json({error:"telegram_execution_plan_incomplete"},409);
-    const {data:binding,error:bindingError}=await db.from("agba_telegram_bindings").select("chat_id,agba_user_id,organization_id,role_code").eq("organization_id",proposal.organization_id).eq("agba_user_id",recipient).maybeSingle();
+    const {data:bindings,error:bindingError}=await db.from("agba_telegram_bindings").select("chat_id,agba_user_id,organization_id,role_code,updated_at").eq("organization_id",proposal.organization_id).eq("agba_user_id",recipient).order("updated_at",{ascending:false}).limit(1);
     if(bindingError)throw bindingError;
-    if(!binding)return json({error:"telegram_recipient_not_bound"},409);
+    telegramBinding=bindings?.[0]||null;
+    if(!telegramBinding)return json({error:"telegram_recipient_not_bound"},409);
     if(!proposal.action_id)return json({error:"telegram_execution_action_required"},409);
   }
 
@@ -44,7 +46,7 @@ Deno.serve(async(req)=>{
   if(existing)return json({ok:existing.status==="succeeded",replayed:true,execution:existing});
 
   const input=tool==="telegram_send"
-    ? {tool,recipient_agba_user_id:String(plan.recipient_agba_user_id),chat_id:Number((await db.from("agba_telegram_bindings").select("chat_id").eq("organization_id",proposal.organization_id).eq("agba_user_id",String(plan.recipient_agba_user_id)).maybeSingle()).data?.chat_id),message:String(plan.message),proposal_id:proposal.id,source:"approved_proposal",test_only:Boolean(plan.test_only),test_scope:plan.test_scope?String(plan.test_scope):undefined}
+    ? {tool,recipient_agba_user_id:String(plan.recipient_agba_user_id),chat_id:Number(telegramBinding.chat_id),message:String(plan.message),proposal_id:proposal.id,source:"approved_proposal",test_only:Boolean(plan.test_only),test_scope:plan.test_scope?String(plan.test_scope):undefined}
     : {operation:"status",status:"in_progress",proposal_id:proposal.id,source:"approved_proposal"};
 
   const {data:execution,error:createError}=await db.from("agba_action_executions").insert({organization_id:proposal.organization_id,action_id:proposal.action_id,tool_name:tool,status:"pending",idempotency_key:idem,input}).select("*").single();
