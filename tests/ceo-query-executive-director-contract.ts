@@ -2,7 +2,7 @@ const source = await Deno.readTextFile("supabase/functions/ceo-query/index.ts");
 
 const required = [
   "CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT",
-  "For broad questions such as “what is on our plate?", “what matters today?", or “what needs attention?", synthesize and prioritize",
+  "For broad questions such as", "synthesize and prioritize",
   "Connect the current situation to what happened before",
   "Prefer natural paragraphs over rigid section labels",
   "Do not dump every metric or historical item merely because it is available",
