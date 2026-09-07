@@ -181,10 +181,7 @@ Deno.serve(async (req) => {
       if (state.unresolved?.length) sections.push(`**Still unresolved**\n${state.unresolved.slice(0, 5).map((x: any) => `• ${x.title || x.summary || x.content || "Unresolved item"}`).join("\n")}`);
       if (canonical.transitions?.length) sections.push(`**What happens next**\n${canonical.transitions.slice(0, 4).map((x: any) => `• ${x.what_happened || x.what_it_means || "Business transition recorded"}${x.unresolved ? " · still open" : ""}`).join("\n")}`);
       await send(chatId, sections.length ? `Agba 🧠\n\n${sections.join("\n\n")}` : "Agba has no material business changes or unresolved items to report right now.");
-    } catch (e) {
-      console.error("telegram_briefing_failed", e);
-      await send(chatId, "Agba could not prepare the briefing right now. Try again in a moment.");
-    }
+    } catch (e) { console.error("telegram_briefing_failed", e); await send(chatId, "Agba could not prepare the briefing right now. Try again in a moment."); }
     return json({ ok: true });
   }
 
@@ -205,16 +202,59 @@ Deno.serve(async (req) => {
   await typing(chatId);
   const typingTimer = setInterval(() => { void typing(chatId); }, 4000);
   try {
-    const [{ data: state }, { data: reports }, { data: actions }] = await Promise.all([
-      supabase.from("agba_state_items").select("id,title,summary,status,confidence,severity,recommended_action,last_seen_at,department_id").eq("organization_id", orgId).in("status", ["active", "monitoring"]).order("last_seen_at", { ascending: false }).limit(40),
+    const canonical = await getCanonicalExecutiveState(supabase, orgId, role === "department_head" ? departmentId : null, 40);
+    const [{ data: reports }, { data: actions }] = await Promise.all([
       supabase.from("agba_reports").select("created_at,report_date,raw_text,confirmation_status,department_id").eq("organization_id", orgId).eq("confirmation_status", "confirmed").order("created_at", { ascending: false }).limit(20),
       supabase.from("agba_actions").select("id,description,status,priority,owner_name,deadline,created_at,source_state_item_id").eq("organization_id", orgId).in("status", ["open", "in_progress"]).order("created_at", { ascending: false }).limit(20)
     ]);
-    const prompt = `You are Agba, the operating brain of a company. Answer the CEO directly using only confirmed company evidence. Never invent facts. Be concise and practical. Use Telegram-friendly Markdown.\n\nCEO QUESTION:\n${text}\n\nPERSISTENT STATE:\n${JSON.stringify(state || [])}\n\nCONFIRMED REPORTS:\n${JSON.stringify(reports || [])}\n\nOPEN MANAGEMENT ACTIONS:\n${JSON.stringify(actions || [])}\n\nReturn ONLY JSON: {"answer":"final Telegram-ready answer","confidence":"high|medium|low","confidence_reason":"reason","actions":[{"description":"specific evidence-backed management action","owner_name":null,"deadline":null,"priority":"low|medium|high|critical","source_state_item_id":null}]}. If an open action already covers the same operational intent, do not propose another duplicate action. Refer to the existing action instead.`;
+    const state = canonical.executive_state;
+    const prompt = `CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT
+
+You are Agba, the company's Executive Director and operating brain. Speak directly to the CEO as a calm, practical executive director who understands the company's situation over time. You are not a database/report generator.
+
+GROUNDING
+- Answer only from confirmed company evidence, canonical executive state, open management actions, and supplied conversation context.
+- Never invent customers, orders, amounts, dates, owners, deadlines, completion, authority, or outcomes.
+- For broad questions such as “what is on our plate?” or “what matters today?”, synthesize and prioritize the few material matters that deserve attention rather than dumping every metric or historical item merely because it is available.
+- Connect the current situation to what happened before when that explains why something matters now. Preserve useful transitions: what happened, what it means, what was decided, what was done, what remains unresolved.
+- Completed items are historical unless they materially close a loop or change today's picture.
+- Prefer natural paragraphs over rigid section labels. Use bullets only when they genuinely improve clarity.
+
+GOVERNANCE — OWNER / AUTHORITY SEPARATION
+- Distinguish the recorded human owner, Agba's recommendation, and Agba's execution authority.
+- Never claim ownership of an unassigned human action. Never silently reassign a recorded owner.
+- If an action is unassigned, recommend the appropriate human role/owner without inventing a person.
+- A CEO asking what Agba should do, what it can take off their plate, or how it would do something is not by itself authorization to execute an external operational act.
+- Never claim that Agba has contacted a customer, supplier, staff member, logistics partner, scheduled something, sent something, activated an action, or is monitoring an external process unless explicit authorization and an actual authorized execution path are established by evidence.
+- If execution authority or a required connector is not evidenced, say so plainly and give the safe next step: prepare the follow-up, identify what is needed, recommend the owner, or ask for authorization through the application's governed action path.
+- Routine human work may be recommended without CEO approval, but that does not make Agba the owner.
+- Do not move or rewrite a missed deadline without evidence of a new deadline.
+- For overdue work, state the original deadline, current owner if known, and evidence of progress/completion if any.
+- When asked what Agba can “take off” or “handle”, do not infer execution authority from the existence of an action. Explain what can be prepared/coordinated/recommended and what requires an authorized connector or approval.
+- A conversational question about how Agba would do something is not permission to do it.
+
+STYLE
+- Be concise but substantive. Lead with what matters and why.
+- Avoid boilerplate such as “Today's snapshot”, “Agba recommends”, or “No additional actions are required”.
+- Do not narrate formatting choices.
+
+CEO QUESTION:
+${text}
+
+CANONICAL EXECUTIVE STATE:
+${JSON.stringify(state || {})}
+
+CONFIRMED REPORTS:
+${JSON.stringify(reports || [])}
+
+OPEN MANAGEMENT ACTIONS:
+${JSON.stringify(actions || [])}
+
+Return ONLY JSON: {"answer":"final Telegram-ready answer","confidence":"high|medium|low","confidence_reason":"reason","actions":[{"description":"specific evidence-backed management action","owner_name":null,"deadline":null,"priority":"low|medium|high|critical","source_state_item_id":null}]}. Do not create a new action when an open action already covers the same operational intent. Do not assign an owner unless the evidence or CEO instruction explicitly establishes that owner. If the answer is advisory only, actions may be empty.`;
     const r = await askAI(prompt), v = r.value || {};
     const answer = String(v.answer || v.response || v.summary || "I don't have enough confirmed business information to answer that yet.");
     await send(chatId, "Agba 🧠\n\n" + answer);
-    const { data: q } = await supabase.from("agba_ceo_queries").insert({ organization_id: orgId, asked_by: binding.agba_user_id, question: text, answer, confidence: ["high", "medium", "low"].includes(v.confidence) ? v.confidence : "medium", confidence_reason: String(v.confidence_reason || "Based on confirmed company evidence available to Agba."), provenance: { channel: "telegram", chat_id: chatId, provider: r.provider, model: r.model } }).select("id").single();
+    const { data: q } = await supabase.from("agba_ceo_queries").insert({ organization_id: orgId, asked_by: binding.agba_user_id, question: text, answer, confidence: ["high", "medium", "low"].includes(v.confidence) ? v.confidence : "medium", confidence_reason: String(v.confidence_reason || "Based on confirmed company evidence available to Agba."), provenance: { channel: "telegram", chat_id: chatId, provider: r.provider, model: r.model, reasoning_path: "executive_director_contract" } }).select("id").single();
     if (q && Array.isArray(v.actions)) {
       const existing = await supabase.from("agba_actions").select("id,description,status,priority,owner_name,deadline,source_ceo_query_id").eq("organization_id", orgId).in("status", ["open", "in_progress"]).limit(100);
       const working = [...(existing.data || [])];
