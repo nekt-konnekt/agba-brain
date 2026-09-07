@@ -1,0 +1,59 @@
+name: One-time Telegram response polish
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Patch Telegram response contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/telegram-gateway/index.ts')
+          s = p.read_text()
+
+          anchor = '''function cleanJson(text: string) {'''
+          helper = '''function sanitizeTelegramAnswer(text: string) {
+            return text
+              .replace(/TELEGRAM-CONNECTOR-E2E-[0-9a-f-]+/gi, "the Telegram connector test")
+              .replace(/(^|\\n)\\s*•?\\s*Action outcome:\\s*the Telegram connector test[^\\n]*/gi, "")
+              .replace(/\\n{3,}/g, "\\n\\n")
+              .trim();
+          }
+
+          '''
+          if helper.strip() not in s:
+              s = s.replace(anchor, helper + anchor, 1)
+
+          old = 'const answer = String(v.answer || v.response || v.summary || "I don\'t have enough confirmed business information to answer that yet.");'
+          new = 'const answer = sanitizeTelegramAnswer(String(v.answer || v.response || v.summary || "I don\'t have enough confirmed business information to answer that yet."));'
+          if old not in s:
+              raise SystemExit('answer assignment anchor not found')
+          s = s.replace(old, new, 1)
+
+          old_prompt = '''- Prefer natural paragraphs over rigid section labels. Use bullets only when they genuinely improve clarity.\n\nGOVERNANCE'''
+          new_prompt = '''- Prefer natural paragraphs over rigid section labels. Use bullets only when they genuinely improve clarity.\n- Structure Telegram answers for fast executive reading: short paragraphs, with a blank line between distinct thoughts. Use a small number of bullets only when comparing actions, owners, or priorities.\n- Never expose internal database IDs, UUIDs, test IDs, connector run IDs, source record IDs, provenance identifiers, or implementation/debug identifiers to the CEO. Translate them into plain business language such as “the Telegram connector test” or omit them when they add no decision value.\n- Do not present raw evidence records as a transcript. Synthesize what the evidence means for the business.\n\nGOVERNANCE'''
+          if old_prompt not in s:
+              raise SystemExit('prompt style anchor not found')
+          s = s.replace(old_prompt, new_prompt, 1)
+
+          p.write_text(s)
+          PY
+
+      - name: Commit and remove one-time workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/telegram-gateway/index.ts
+          git rm .github/workflows/one-time-telegram-response-polish.yml
+          git commit -m "fix: hide internal IDs from Telegram executive responses"
+          git push
