@@ -1,1 +1,0 @@
-Morning Brief now uses canonical executive-memory state.
