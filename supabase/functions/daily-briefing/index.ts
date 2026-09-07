@@ -1,47 +1,221 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-const corsHeaders={"Access-Control-Allow-Origin":"*","Access-Control-Allow-Headers":"authorization, x-client-info, apikey, content-type","Access-Control-Allow-Methods":"POST, OPTIONS","Content-Type":"application/json"};
-const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:corsHeaders});
-type Row=Record<string,any>;
-const keyOf=(r:Row)=>r.source_reasoning_item_id?`reasoning:${r.source_reasoning_item_id}`:`text:${String(r.title||r.description||"").replace(/^Overdue:\s*/i,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim()}`;
-const dayKey=(v:any)=>new Date(v).toISOString().slice(0,10);
-Deno.serve(async req=>{
- if(req.method==="OPTIONS")return new Response("ok",{headers:corsHeaders});
- if(req.method!=="POST")return json({error:"method_not_allowed"},405);
- const url=Deno.env.get("SUPABASE_URL"),key=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");if(!url||!key)return json({error:"server_configuration_error"},500);
- const admin=createClient(url,key,{auth:{autoRefreshToken:false,persistSession:false}});
- let body:{organization_id:string;department_id?:string|null;briefing_date?:string;deliver?:boolean;secret?:string};try{body=await req.json()}catch{return json({error:"invalid_json"},400)}
- if(!body.organization_id)return json({error:"organization_id_required"},400);
- const secretResult=body.secret?await admin.rpc("agba_telegram_worker_secret"):null;const expected=secretResult?.data?String(secretResult.data):"";const internal=!!body.secret&&!!expected&&body.secret===expected;
- let role:string|null=null;
- if(internal)role="ceo";else{const h=req.headers.get("Authorization");if(!h)return json({error:"missing_authorization"},401);const token=h.replace(/^Bearer\s+/i,"");const {data:{user},error}=await admin.auth.getUser(token);if(error||!user)return json({error:"invalid_authorization"},401);const {data:actor}=await admin.from("agba_users").select("id,department_id,active,agba_roles(code)").eq("auth_user_id",user.id).eq("organization_id",body.organization_id).eq("active",true).maybeSingle();if(!actor)return json({error:"actor_not_registered_for_organization"},403);role=(actor.agba_roles as {code?:string}|null)?.code||null;if(role!=="ceo"&&role!=="department_head")return json({error:"insufficient_role"},403);if(role==="department_head"&&(body.department_id??null)!==actor.department_id)return json({error:"department_scope_violation"},403)}
- const requestedDepartment=body.department_id??null;const audience=role==="ceo"&&!requestedDepartment?"ceo":"department_head";const departmentId=audience==="ceo"?null:requestedDepartment;const briefingDate=body.briefing_date??new Date().toISOString().slice(0,10);const scope=(rows:Row[])=>rows.filter(r=>role==="ceo"||r.department_id===departmentId||r.department_id==null);
- const [stateResult,actionsResult,decisionsResult,goalsResult,proposalsResult,historyResult,doneActionsResult,recentStateResult]=await Promise.all([
-  admin.from("agba_state_items").select("id,department_id,kind,title,summary,status,confidence,severity,recommended_action,last_seen_at,source_reasoning_item_id,source_report_id").eq("organization_id",body.organization_id).in("status",["active","monitoring"]).order("last_seen_at",{ascending:false}).limit(30),
-  admin.from("agba_actions").select("id,owner_name,description,deadline,status,priority,source_ceo_query_id,source_state_item_id,metadata,created_at,updated_at").eq("organization_id",body.organization_id).in("status",["open","in_progress"]).order("deadline",{ascending:true,nullsFirst:false}).limit(30),
-  admin.from("agba_decisions").select("id,department_id,title,decision_text,status,decided_at,created_at,updated_at").eq("organization_id",body.organization_id).order("updated_at",{ascending:false}).limit(20),
-  admin.from("agba_goals").select("id,department_id,title,description,status,target_value,current_value,unit,target_date,created_at,updated_at").eq("organization_id",body.organization_id).in("status",["planned","active","at_risk"]).order("target_date",{ascending:true,nullsFirst:false}).limit(20),
-  admin.from("agba_proposals").select("id,watcher_id,reasoning_item_id,action_id,approval_id,kind,title,summary,recommendation,status,priority,expires_at,created_at,updated_at").eq("organization_id",body.organization_id).in("status",["proposed","approved"]).order("priority",{ascending:true}).order("created_at",{ascending:false}).limit(20),
-  admin.from("agba_briefings").select("id,briefing_date,audience,department_id").eq("organization_id",body.organization_id).eq("audience",audience).eq("department_id",departmentId).lt("briefing_date",briefingDate).order("briefing_date",{ascending:false}).limit(14),
-  admin.from("agba_actions").select("id,description,owner_name,status,deadline,updated_at,metadata").eq("organization_id",body.organization_id).in("status",["done","cancelled"]).gte("updated_at",`${briefingDate}T00:00:00Z`).order("updated_at",{ascending:false}).limit(30),
-  admin.from("agba_state_items").select("id,department_id,kind,title,status,last_seen_at,updated_at,source_reasoning_item_id").eq("organization_id",body.organization_id).gte("updated_at",new Date(Date.parse(briefingDate)-14*86400000).toISOString()).order("updated_at",{ascending:false}).limit(50)
- ]);
- for(const r of [stateResult,actionsResult,decisionsResult,goalsResult,proposalsResult,historyResult,doneActionsResult,recentStateResult])if(r.error)return json({error:"briefing_source_lookup_failed",detail:r.error.message},400);
- const state=stateResult.data??[],rawActions=actionsResult.data??[],actions=role==="ceo"?rawActions:rawActions.filter(a=>(a.metadata?.department_id??null)===departmentId||a.metadata?.department_id==null),decisions=decisionsResult.data??[],goals=goalsResult.data??[],proposals=proposalsResult.data??[];
- const scopedState=scope(state),scopedDecisions=scope(decisions),scopedGoals=scope(goals),now=Date.now();const overdue=actions.filter(a=>a.deadline&&new Date(a.deadline).getTime()<now),criticalRisks=scopedState.filter(s=>(s.kind==="risk"||s.kind==="issue")&&["high","critical"].includes(s.severity)),atRiskGoals=scopedGoals.filter(g=>g.status==="at_risk"),pendingDecisions=scopedDecisions.filter(d=>d.status==="proposed");
- const current:Row[]=[];const add=(type:string,priority:number,title:string,content:string,source?:string|null)=>{if(current.length<8)current.push({briefing_id:"",type,priority,title,content,source_reasoning_item_id:source??null})};
- for(const r of criticalRisks.slice(0,3))add("issue",r.severity==="critical"?1:2,r.title,`${r.summary}${r.recommended_action?` Recommendation: ${r.recommended_action}`:""}`,r.source_reasoning_item_id);
- for(const p of proposals.slice(0,3))add("attention",p.priority,p.title,`${p.summary}${p.recommendation?` Recommendation: ${p.recommendation}`:""}`,p.reasoning_item_id);
- for(const a of overdue.slice(0,3))add("task",2,`Overdue: ${a.description}`,`Owner: ${a.owner_name??"unassigned"}. Deadline: ${a.deadline}.`,a.source_state_item_id?scopedState.find(s=>s.id===a.source_state_item_id)?.source_reasoning_item_id:null);
- for(const d of pendingDecisions.slice(0,2))add("decision",2,d.title,d.decision_text);
- for(const g of atRiskGoals.slice(0,2))add("watch",3,g.title,`Goal is at risk${g.target_date?` with target date ${g.target_date}`:""}. ${g.current_value!=null&&g.target_value!=null?`Progress: ${g.current_value}/${g.target_value}${g.unit?` ${g.unit}`:""}.`:""}`);
- for(const c of scopedState.filter(s=>s.kind==="observation"||s.kind==="opportunity").slice(0,2))add("change",4,c.title,c.summary,c.source_reasoning_item_id);
- const priorBriefings=historyResult.data??[];const priorIds=priorBriefings.map(b=>b.id);let priorItems:Row[]=[];if(priorIds.length){const {data,error}=await admin.from("agba_briefing_items").select("id,briefing_id,type,title,content,priority,source_reasoning_item_id,created_at").in("briefing_id",priorIds);if(error)return json({error:"briefing_history_lookup_failed",detail:error.message},400);priorItems=data??[]}
- const dateByBriefing=new Map(priorBriefings.map(b=>[b.id,String(b.briefing_date)]));const historyByKey=new Map<string,Set<string>>();for(const p of priorItems){const k=keyOf(p),d=dateByBriefing.get(p.briefing_id);if(!d)continue;if(!historyByKey.has(k))historyByKey.set(k,new Set());historyByKey.get(k)!.add(d)}
- const currentKeys=new Set(current.map(keyOf));const enrich=(item:Row)=>{const k=keyOf(item),dates=historyByKey.get(k);if(!dates||dates.size===0){item.content=`New today. ${item.content}`;return}let streak=1,cursor=briefingDate;while(true){const prev=new Date(Date.parse(cursor)-86400000).toISOString().slice(0,10);if(!dates.has(prev))break;streak++;cursor=prev}if(streak>1){item.content=`Still unresolved for ${streak} consecutive days. ${item.content}`;item.priority=Math.max(1,Number(item.priority??4)-1)}else item.content=`Seen previously; still active today. ${item.content}`};current.forEach(enrich);
- const resolved:Row[]=[];const doneKeys=new Set((doneActionsResult.data??[]).map(keyOf));const inactiveStateKeys=new Set((recentStateResult.data??[]).filter(s=>s.status!=="active"&&s.status!=="monitoring").map(keyOf));for(const p of priorItems){const k=keyOf(p);if(currentKeys.has(k)||resolved.some(r=>keyOf(r)===k))continue;if(doneKeys.has(k)||inactiveStateKeys.has(k))resolved.push({briefing_id:"",type:"change",priority:4,title:`Resolved: ${String(p.title).replace(/^Overdue:\s*/i,"")}`,content:"Resolved since the previous executive briefing.",source_reasoning_item_id:p.source_reasoning_item_id??null});if(resolved.length>=2)break}for(const r of resolved)if(current.length<8)current.push(r);
- const attention=criticalRisks.length+proposals.length+overdue.length+pendingDecisions.length+atRiskGoals.length;const persistent=current.filter(i=>/Still unresolved|Seen previously/.test(String(i.content))).length;const summary=attention===0?(resolved.length?`${resolved.length} item${resolved.length===1?"":"s"} resolved since the previous briefing. No active risks, overdue actions, pending decisions, or at-risk goals were found.`:"No active risks, overdue actions, pending decisions, or at-risk goals were found in the current executive memory."):`${attention} item${attention===1?"":"s"} require executive attention. ${criticalRisks.length} critical/high risk${criticalRisks.length===1?"":"s"}, ${overdue.length} overdue action${overdue.length===1?"":"s"}, and ${pendingDecisions.length} pending decision${pendingDecisions.length===1?"":"s"} are currently recorded.${persistent?` ${persistent} item${persistent===1?" remains":"s remain"} unresolved from earlier briefings.`:""}${resolved.length?` ${resolved.length} item${resolved.length===1?" has":"s have"} been resolved.`:""}`;
- const {data:briefing,error:briefingError}=await admin.from("agba_briefings").upsert({organization_id:body.organization_id,department_id:departmentId,audience,briefing_date:briefingDate,title:audience==="ceo"?"Daily Company Briefing":"Daily Department Briefing",summary,status:"validated"},{onConflict:"organization_id,department_id,audience,briefing_date"}).select("*").single();if(briefingError||!briefing)return json({error:"briefing_create_failed",detail:briefingError?.message},400);
- const {error:cleanupError}=await admin.from("agba_briefing_items").delete().eq("briefing_id",briefing.id);if(cleanupError)return json({error:"briefing_items_cleanup_failed",detail:cleanupError.message},400);const rows=current.map(i=>({...i,briefing_id:briefing.id}));let inserted:Row[]=[];if(rows.length){const {data,error}=await admin.from("agba_briefing_items").insert(rows).select("*");if(error)return json({error:"briefing_items_failed",detail:error.message},400);inserted=data??[]}
- let deliveryQueued=0;if(internal&&body.deliver!==false&&audience==="ceo"){const {data:bindings,error}=await admin.from("agba_telegram_bindings").select("chat_id,role_code").eq("organization_id",body.organization_id).eq("role_code","ceo");if(error)return json({error:"telegram_binding_lookup_failed",detail:error.message},400);const lines=["🧠 Agba — Morning Brief","",summary];for(const i of inserted.slice().sort((a,b)=>Number(a.priority??9)-Number(b.priority??9)))lines.push("",`${i.type==="issue"?"🔴":i.type==="decision"?"🟡":i.type==="task"?"⏰":i.type==="change"?"🟢":"🧠"} ${i.title}`,String(i.content||""));const text=lines.join("\n").slice(0,12000);for(const b of bindings??[]){const chatId=String(b.chat_id);const {data:existing}=await admin.from("agba_telegram_delivery_outbox").select("id,status").eq("organization_id",body.organization_id).eq("chat_id",chatId).filter("payload->>briefing_id","eq",briefing.id).limit(1);if(existing?.length)continue;const {error}=await admin.from("agba_telegram_delivery_outbox").insert({organization_id:body.organization_id,chat_id:chatId,payload:{type:"daily_briefing",briefing_id:briefing.id,chat_id:chatId,text},status:"pending",attempts:0,max_attempts:5});if(error)return json({error:"telegram_outbox_insert_failed",detail:error.message},400);deliveryQueued++}}
- return json({briefing,items:inserted,counts:{risks:criticalRisks.length,overdue_actions:overdue.length,pending_decisions:pendingDecisions.length,at_risk_goals:atRiskGoals.length,proposals:proposals.length,persistent_items:persistent,resolved_items:resolved.length,prior_briefings:priorBriefings.length},generated_by:"evidence_compiler",delivery_queued:deliveryQueued},201);
+
+const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" };
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: corsHeaders });
+type Row = Record<string, any>;
+
+const keyOf = (r: Row) => r.source_reasoning_item_id
+  ? `reasoning:${r.source_reasoning_item_id}`
+  : `text:${String(r.title || r.description || "").replace(/^Overdue:\s*/i, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()}`;
+
+const localDate = (value: string | Date, timezone: string) => {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value));
+  const get = (type: string) => parts.find(p => p.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+};
+
+const dateStatus = (deadline: string | null | undefined, briefingDate: string, timezone: string) => {
+  if (!deadline) return "none";
+  const due = localDate(deadline, timezone);
+  if (due < briefingDate) return "overdue";
+  if (due === briefingDate) return "today";
+  return "upcoming";
+};
+
+const isMaterialAction = (action: Row, stateById: Map<string, Row>) => {
+  const priority = String(action.priority || "").toLowerCase();
+  if (["critical", "high"].includes(priority)) return true;
+  const metadata = action.metadata || {};
+  if (metadata.executive_attention === true || metadata.material_risk === true || metadata.ceo_attention === true) return true;
+  const linked = action.source_state_item_id ? stateById.get(action.source_state_item_id) : null;
+  if (linked && ["high", "critical"].includes(String(linked.severity || "").toLowerCase())) return true;
+  return !!linked && ["risk", "issue"].includes(String(linked.kind || "").toLowerCase());
+};
+
+Deno.serve(async req => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const url = Deno.env.get("SUPABASE_URL"), key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return json({ error: "server_configuration_error" }, 500);
+  const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  let body: { organization_id: string; department_id?: string | null; briefing_date?: string; deliver?: boolean; secret?: string };
+  try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  if (!body.organization_id) return json({ error: "organization_id_required" }, 400);
+
+  const secretResult = body.secret ? await admin.rpc("agba_telegram_worker_secret") : null;
+  const expected = secretResult?.data ? String(secretResult.data) : "";
+  const internal = !!body.secret && !!expected && body.secret === expected;
+  let role: string | null = null;
+  if (internal) role = "ceo";
+  else {
+    const h = req.headers.get("Authorization");
+    if (!h) return json({ error: "missing_authorization" }, 401);
+    const token = h.replace(/^Bearer\s+/i, "");
+    const { data: { user }, error } = await admin.auth.getUser(token);
+    if (error || !user) return json({ error: "invalid_authorization" }, 401);
+    const { data: actor } = await admin.from("agba_users").select("id,department_id,active,agba_roles(code)").eq("auth_user_id", user.id).eq("organization_id", body.organization_id).eq("active", true).maybeSingle();
+    if (!actor) return json({ error: "actor_not_registered_for_organization" }, 403);
+    role = (actor.agba_roles as { code?: string } | null)?.code || null;
+    if (role !== "ceo" && role !== "department_head") return json({ error: "insufficient_role" }, 403);
+    if (role === "department_head" && (body.department_id ?? null) !== actor.department_id) return json({ error: "department_scope_violation" }, 403);
+  }
+
+  const requestedDepartment = body.department_id ?? null;
+  const audience = role === "ceo" && !requestedDepartment ? "ceo" : "department_head";
+  const departmentId = audience === "ceo" ? null : requestedDepartment;
+
+  const { data: organization, error: organizationError } = await admin.from("agba_organizations").select("timezone").eq("id", body.organization_id).maybeSingle();
+  if (organizationError) return json({ error: "organization_lookup_failed", detail: organizationError.message }, 400);
+  const timezone = organization?.timezone || "Africa/Lagos";
+  const briefingDate = body.briefing_date || localDate(new Date(), timezone);
+  const scope = (rows: Row[]) => rows.filter(r => role === "ceo" || r.department_id === departmentId || r.department_id == null);
+
+  const [stateResult, actionsResult, decisionsResult, goalsResult, proposalsResult, historyResult, doneActionsResult, recentStateResult] = await Promise.all([
+    admin.from("agba_state_items").select("id,department_id,kind,title,summary,status,confidence,severity,recommended_action,last_seen_at,source_reasoning_item_id,source_report_id").eq("organization_id", body.organization_id).in("status", ["active", "monitoring"]).order("last_seen_at", { ascending: false }).limit(30),
+    admin.from("agba_actions").select("id,owner_name,description,deadline,status,priority,source_ceo_query_id,source_state_item_id,metadata,created_at,updated_at").eq("organization_id", body.organization_id).in("status", ["open", "in_progress"]).order("deadline", { ascending: true, nullsFirst: false }).limit(30),
+    admin.from("agba_decisions").select("id,department_id,title,decision_text,status,decided_at,created_at,updated_at").eq("organization_id", body.organization_id).order("updated_at", { ascending: false }).limit(20),
+    admin.from("agba_goals").select("id,department_id,title,description,status,target_value,current_value,unit,target_date,created_at,updated_at").eq("organization_id", body.organization_id).in("status", ["planned", "active", "at_risk"]).order("target_date", { ascending: true, nullsFirst: false }).limit(20),
+    admin.from("agba_proposals").select("id,watcher_id,reasoning_item_id,action_id,approval_id,kind,title,summary,recommendation,status,priority,expires_at,created_at,updated_at").eq("organization_id", body.organization_id).in("status", ["proposed", "approved"]).order("priority", { ascending: true }).order("created_at", { ascending: false }).limit(20),
+    admin.from("agba_briefings").select("id,briefing_date,audience,department_id").eq("organization_id", body.organization_id).eq("audience", audience).eq("department_id", departmentId).lt("briefing_date", briefingDate).order("briefing_date", { ascending: false }).limit(14),
+    admin.from("agba_actions").select("id,description,owner_name,status,deadline,updated_at,metadata").eq("organization_id", body.organization_id).in("status", ["done", "cancelled"]).gte("updated_at", `${briefingDate}T00:00:00Z`).order("updated_at", { ascending: false }).limit(30),
+    admin.from("agba_state_items").select("id,department_id,kind,title,status,last_seen_at,updated_at,source_reasoning_item_id,severity,summary").eq("organization_id", body.organization_id).gte("updated_at", new Date(Date.parse(briefingDate) - 14 * 86400000).toISOString()).order("updated_at", { ascending: false }).limit(50)
+  ]);
+  for (const r of [stateResult, actionsResult, decisionsResult, goalsResult, proposalsResult, historyResult, doneActionsResult, recentStateResult]) if (r.error) return json({ error: "briefing_source_lookup_failed", detail: r.error.message }, 400);
+
+  const state = stateResult.data ?? [];
+  const rawActions = actionsResult.data ?? [];
+  const actions = role === "ceo" ? rawActions : rawActions.filter(a => (a.metadata?.department_id ?? null) === departmentId || a.metadata?.department_id == null);
+  const decisions = decisionsResult.data ?? [];
+  const goals = goalsResult.data ?? [];
+  const proposals = proposalsResult.data ?? [];
+  const scopedState = scope(state);
+  const scopedDecisions = scope(decisions);
+  const scopedGoals = scope(goals);
+  const stateById = new Map(state.map(s => [String(s.id), s]));
+
+  const overdue = actions.filter(a => dateStatus(a.deadline, briefingDate, timezone) === "overdue");
+  const materialOverdue = overdue.filter(a => isMaterialAction(a, stateById));
+  const routineOverdue = overdue.filter(a => !isMaterialAction(a, stateById));
+  const dueToday = actions.filter(a => dateStatus(a.deadline, briefingDate, timezone) === "today");
+  const criticalRisks = scopedState.filter(s => (s.kind === "risk" || s.kind === "issue") && ["high", "critical"].includes(String(s.severity || "").toLowerCase()));
+  const atRiskGoals = scopedGoals.filter(g => g.status === "at_risk");
+  const pendingDecisions = scopedDecisions.filter(d => d.status === "proposed");
+
+  const current: Row[] = [];
+  const add = (type: string, priority: number, title: string, content: string, source?: string | null) => {
+    if (current.length < 8) current.push({ briefing_id: "", type, priority, title, content, source_reasoning_item_id: source ?? null });
+  };
+
+  // Executive attention: material risks, decisions, proposals and business-impacting actions only.
+  for (const r of criticalRisks.slice(0, 3)) add("issue", r.severity === "critical" ? 1 : 2, r.title, `${r.summary}${r.recommended_action ? ` Recommendation: ${r.recommended_action}` : ""}`, r.source_reasoning_item_id);
+  for (const p of proposals.slice(0, 3)) add("attention", p.priority, p.title, `${p.summary}${p.recommendation ? ` Recommendation: ${p.recommendation}` : ""}`, p.reasoning_item_id);
+  for (const d of pendingDecisions.slice(0, 2)) add("decision", 2, d.title, d.decision_text);
+  for (const a of materialOverdue.slice(0, 3)) {
+    const due = dateStatus(a.deadline, briefingDate, timezone);
+    add("issue", 2, a.description, `Owner: ${a.owner_name ?? "unassigned"}. Deadline: ${a.deadline}. Status: ${due}.`, a.source_state_item_id ? stateById.get(a.source_state_item_id)?.source_reasoning_item_id : null);
+  }
+  for (const a of dueToday.slice(0, 2)) {
+    if (!isMaterialAction(a, stateById)) continue;
+    add("attention", 2, a.description, `Due today. Owner: ${a.owner_name ?? "unassigned"}.`, a.source_state_item_id ? stateById.get(a.source_state_item_id)?.source_reasoning_item_id : null);
+  }
+  for (const g of atRiskGoals.slice(0, 2)) add("watch", 3, g.title, `Goal is at risk${g.target_date ? ` with target date ${g.target_date}` : ""}. ${g.current_value != null && g.target_value != null ? `Progress: ${g.current_value}/${g.target_value}${g.unit ? ` ${g.unit}` : ""}.` : ""}`);
+
+  // Useful context belongs below executive attention, not in the alert count.
+  for (const c of scopedState.filter(s => s.kind === "observation" || s.kind === "opportunity").slice(0, 2)) add("change", 4, c.title, c.summary, c.source_reasoning_item_id);
+
+  const priorBriefings = historyResult.data ?? [];
+  const priorIds = priorBriefings.map(b => b.id);
+  let priorItems: Row[] = [];
+  if (priorIds.length) {
+    const { data, error } = await admin.from("agba_briefing_items").select("id,briefing_id,type,title,content,priority,source_reasoning_item_id,created_at").in("briefing_id", priorIds);
+    if (error) return json({ error: "briefing_history_lookup_failed", detail: error.message }, 400);
+    priorItems = data ?? [];
+  }
+  const dateByBriefing = new Map(priorBriefings.map(b => [b.id, String(b.briefing_date)]));
+  const historyByKey = new Map<string, Set<string>>();
+  for (const p of priorItems) {
+    const k = keyOf(p), d = dateByBriefing.get(p.briefing_id);
+    if (!d) continue;
+    if (!historyByKey.has(k)) historyByKey.set(k, new Set());
+    historyByKey.get(k)!.add(d);
+  }
+
+  const currentKeys = new Set(current.map(keyOf));
+  const enrich = (item: Row) => {
+    const k = keyOf(item), dates = historyByKey.get(k);
+    if (!dates || dates.size === 0) { item.content = `New today. ${item.content}`; return; }
+    let streak = 1, cursor = briefingDate;
+    while (true) {
+      const prev = localDate(new Date(`${cursor}T12:00:00Z`).getTime() - 86400000, timezone);
+      if (!dates.has(prev)) break;
+      streak++;
+      cursor = prev;
+    }
+    if (streak > 1) { item.content = `Still unresolved for ${streak} consecutive days. ${item.content}`; item.priority = Math.max(1, Number(item.priority ?? 4) - 1); }
+    else item.content = `Seen previously; still active today. ${item.content}`;
+  };
+  current.forEach(enrich);
+
+  const resolved: Row[] = [];
+  const doneKeys = new Set((doneActionsResult.data ?? []).map(keyOf));
+  const inactiveStateKeys = new Set((recentStateResult.data ?? []).filter(s => s.status !== "active" && s.status !== "monitoring").map(keyOf));
+  for (const p of priorItems) {
+    const k = keyOf(p);
+    if (currentKeys.has(k) || resolved.some(r => keyOf(r) === k)) continue;
+    if (doneKeys.has(k) || inactiveStateKeys.has(k)) resolved.push({ briefing_id: "", type: "change", priority: 4, title: `Resolved: ${String(p.title).replace(/^Overdue:\s*/i, "")}`, content: "Resolved since the previous executive briefing.", source_reasoning_item_id: p.source_reasoning_item_id ?? null });
+    if (resolved.length >= 2) break;
+  }
+  for (const r of resolved) if (current.length < 8) current.push(r);
+
+  const executiveAttention = criticalRisks.length + proposals.length + materialOverdue.length + (dueToday.filter(a => isMaterialAction(a, stateById)).length) + pendingDecisions.length + atRiskGoals.length;
+  const persistent = current.filter(i => /Still unresolved|Seen previously/.test(String(i.content))).length;
+  const summary = executiveAttention === 0
+    ? (resolved.length
+      ? `${resolved.length} item${resolved.length === 1 ? "" : "s"} resolved since the previous briefing. Nothing currently requires your intervention.`
+      : "Nothing currently requires your intervention. Agba is monitoring the business for material risks, decisions, and changes.")
+    : `${executiveAttention} item${executiveAttention === 1 ? "" : "s"} require your attention. ${criticalRisks.length} critical/high risk${criticalRisks.length === 1 ? "" : "s"}, ${materialOverdue.length} material overdue action${materialOverdue.length === 1 ? "" : "s"}, and ${pendingDecisions.length} pending decision${pendingDecisions.length === 1 ? "" : "s"} are currently recorded.${persistent ? ` ${persistent} item${persistent === 1 ? " remains" : "s remain"} unresolved from earlier briefings.` : ""}${resolved.length ? ` ${resolved.length} item${resolved.length === 1 ? " has" : "s have"} been resolved.` : ""}`;
+
+  const { data: briefing, error: briefingError } = await admin.from("agba_briefings").upsert({ organization_id: body.organization_id, department_id: departmentId, audience, briefing_date: briefingDate, title: audience === "ceo" ? "Daily Company Briefing" : "Daily Department Briefing", summary, status: "validated" }, { onConflict: "organization_id,department_id,audience,briefing_date" }).select("*").single();
+  if (briefingError || !briefing) return json({ error: "briefing_create_failed", detail: briefingError?.message }, 400);
+  const { error: cleanupError } = await admin.from("agba_briefing_items").delete().eq("briefing_id", briefing.id);
+  if (cleanupError) return json({ error: "briefing_items_cleanup_failed", detail: cleanupError.message }, 400);
+  const rows = current.map(i => ({ ...i, briefing_id: briefing.id }));
+  let inserted: Row[] = [];
+  if (rows.length) {
+    const { data, error } = await admin.from("agba_briefing_items").insert(rows).select("*");
+    if (error) return json({ error: "briefing_items_failed", detail: error.message }, 400);
+    inserted = data ?? [];
+  }
+
+  let deliveryQueued = 0;
+  if (internal && body.deliver !== false && audience === "ceo") {
+    const { data: bindings, error } = await admin.from("agba_telegram_bindings").select("chat_id,role_code,agba_user_id,updated_at").eq("organization_id", body.organization_id).eq("role_code", "ceo").order("updated_at", { ascending: false });
+    if (error) return json({ error: "telegram_binding_lookup_failed", detail: error.message }, 400);
+    const lines = ["🧠 Agba — Morning Brief", "", summary];
+    const tracking = routineOverdue.slice(0, 2);
+    const trackingDueToday = dueToday.filter(a => !isMaterialAction(a, stateById)).slice(0, 2);
+    if (tracking.length || trackingDueToday.length) {
+      lines.push("", "Agba is tracking:");
+      for (const a of [...tracking, ...trackingDueToday]) {
+        const status = dateStatus(a.deadline, briefingDate, timezone);
+        lines.push(`• ${a.description} · ${a.owner_name ?? "unassigned"} · ${status === "overdue" ? "overdue" : "due today"}`);
+      }
+    }
+    for (const i of inserted.slice().sort((a, b) => Number(a.priority ?? 9) - Number(b.priority ?? 9))) {
+      const icon = i.type === "issue" ? "🔴" : i.type === "decision" ? "🟡" : i.type === "change" ? "🟢" : i.type === "attention" ? "🧠" : "📌";
+      lines.push("", `${icon} ${i.title}`, String(i.content || ""));
+    }
+    const text = lines.join("\n").slice(0, 12000);
+    for (const b of bindings ?? []) {
+      const chatId = String(b.chat_id);
+      const { data: existing } = await admin.from("agba_telegram_delivery_outbox").select("id,status").eq("organization_id", body.organization_id).eq("chat_id", chatId).filter("payload->>briefing_id", "eq", briefing.id).limit(1);
+      if (existing?.length) continue;
+      const { error } = await admin.from("agba_telegram_delivery_outbox").insert({ organization_id: body.organization_id, chat_id: chatId, payload: { type: "daily_briefing", briefing_id: briefing.id, chat_id: chatId, text }, status: "pending", attempts: 0, max_attempts: 5 });
+      if (error) return json({ error: "telegram_outbox_insert_failed", detail: error.message }, 400);
+      deliveryQueued++;
+    }
+  }
+
+  return json({ briefing, items: inserted, counts: { risks: criticalRisks.length, overdue_actions: overdue.length, material_overdue_actions: materialOverdue.length, routine_overdue_actions: routineOverdue.length, due_today: dueToday.length, pending_decisions: pendingDecisions.length, at_risk_goals: atRiskGoals.length, proposals: proposals.length, executive_attention: executiveAttention, persistent_items: persistent, resolved_items: resolved.length, prior_briefings: priorBriefings.length }, generated_by: "evidence_compiler", delivery_queued: deliveryQueued }, 201);
 });
