@@ -5,7 +5,8 @@ const headers={apikey:serviceKey,Authorization:`Bearer ${serviceKey}`,"Content-T
 async function rest(path:string,options:RequestInit={}){const r=await fetch(`${supabaseUrl}/rest/v1/${path}`,{...options,headers:{...headers,...(options.headers||{})}});const text=await r.text();if(!r.ok)throw new Error(`${options.method||"GET"} ${path}: ${r.status} ${text}`);return text?JSON.parse(text):null;}
 async function rpc(name:string,args:Record<string,unknown>){return rest(`rpc/${name}`,{method:"POST",body:JSON.stringify(args)});}
 async function fn(name:string,body:Record<string,unknown>,secret:string){const r=await fetch(`${supabaseUrl}/functions/v1/${name}`,{method:"POST",headers:{"Content-Type":"application/json","x-agba-worker-secret":secret},body:JSON.stringify(body)});const text=await r.text();let data:any={};try{data=JSON.parse(text)}catch{data={raw:text}}if(!r.ok)throw new Error(`${name}: ${r.status} ${text}`);return data;}
-const binding=(await rest("agba_telegram_bindings?select=chat_id,agba_user_id,organization_id&limit=1"))[0];
+const bindings=await rest("agba_telegram_bindings?select=chat_id,agba_user_id,organization_id&order=updated_at.desc&limit=1");
+const binding=bindings?.[0];
 if(!binding?.organization_id||!binding?.agba_user_id)throw new Error("no Telegram binding available");
 const org=binding.organization_id;
 const secret=await rpc("agba_telegram_worker_secret",{});if(!secret)throw new Error("worker secret unavailable");
