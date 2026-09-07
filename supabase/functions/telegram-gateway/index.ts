@@ -26,6 +26,14 @@ async function typing(chat_id: number) {
   catch (e) { console.error("telegram_typing_failed", e); }
 }
 
+function sanitizeTelegramAnswer(text: string) {
+  return text
+    .replace(/TELEGRAM-CONNECTOR-E2E-[0-9a-f-]+/gi, "the Telegram connector test")
+    .replace(/(^|\n)\s*•?\s*Action outcome:\s*the Telegram connector test[^\n]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function cleanJson(text: string) {
   const t = text.trim().replace(/^```json/i, "").replace(/^```/i, "").replace(/```$/i, "").trim();
   try { return JSON.parse(t); } catch {}
@@ -219,6 +227,9 @@ GROUNDING
 - Connect the current situation to what happened before when that explains why something matters now. Preserve useful transitions: what happened, what it means, what was decided, what was done, what remains unresolved.
 - Completed items are historical unless they materially close a loop or change today's picture.
 - Prefer natural paragraphs over rigid section labels. Use bullets only when they genuinely improve clarity.
+- Structure Telegram answers for fast executive reading: short paragraphs, with a blank line between distinct thoughts. Use a small number of bullets only when comparing actions, owners, or priorities.
+- Never expose internal database IDs, UUIDs, test IDs, connector run IDs, source record IDs, provenance identifiers, or implementation/debug identifiers to the CEO. Translate them into plain business language such as “the Telegram connector test” or omit them when they add no decision value.
+- Do not present raw evidence records as a transcript. Synthesize what the evidence means for the business.
 
 GOVERNANCE — OWNER / AUTHORITY SEPARATION
 - Distinguish the recorded human owner, Agba's recommendation, and Agba's execution authority.
@@ -252,7 +263,7 @@ ${JSON.stringify(actions || [])}
 
 Return ONLY JSON: {"answer":"final Telegram-ready answer","confidence":"high|medium|low","confidence_reason":"reason","actions":[{"description":"specific evidence-backed management action","owner_name":null,"deadline":null,"priority":"low|medium|high|critical","source_state_item_id":null}]}. Do not create a new action when an open action already covers the same operational intent. Do not assign an owner unless the evidence or CEO instruction explicitly establishes that owner. If the answer is advisory only, actions may be empty.`;
     const r = await askAI(prompt), v = r.value || {};
-    const answer = String(v.answer || v.response || v.summary || "I don't have enough confirmed business information to answer that yet.");
+    const answer = sanitizeTelegramAnswer(String(v.answer || v.response || v.summary || "I don't have enough confirmed business information to answer that yet."));
     await send(chatId, "Agba 🧠\n\n" + answer);
     const { data: q } = await supabase.from("agba_ceo_queries").insert({ organization_id: orgId, asked_by: binding.agba_user_id, question: text, answer, confidence: ["high", "medium", "low"].includes(v.confidence) ? v.confidence : "medium", confidence_reason: String(v.confidence_reason || "Based on confirmed company evidence available to Agba."), provenance: { channel: "telegram", chat_id: chatId, provider: r.provider, model: r.model, reasoning_path: "executive_director_contract" } }).select("id").single();
     if (q && Array.isArray(v.actions)) {
