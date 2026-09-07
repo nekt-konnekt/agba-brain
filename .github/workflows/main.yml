@@ -47,7 +47,7 @@ jobs:
       - name: Run reliability state machine contracts
         run: deno run tests/reliability-state-machine.ts
       - name: Run Morning Brief canonical state contract
-        run: deno run tests/morning-brief-canonical-state.ts
+        run: deno run --allow-read tests/morning-brief-canonical-state.ts
       - name: Run Telegram queue reliability E2E
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
