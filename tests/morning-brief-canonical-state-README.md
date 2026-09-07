@@ -1,1 +1,0 @@
-The Morning Brief must consume canonical `executive-memory` state and preserve the executive transition: what happened, what it means, decision, action, outcome, unresolved, next.
