@@ -48,6 +48,8 @@ jobs:
         run: deno run tests/reliability-state-machine.ts
       - name: Run CEO executive-director conversation contract
         run: deno run --allow-read tests/ceo-query-executive-director-contract.ts
+      - name: Run Telegram Executive Director conversation contract
+        run: deno run --allow-read tests/telegram-gateway-executive-director-contract.ts
       - name: Run Morning Brief canonical state contract
         run: deno run --allow-read tests/morning-brief-canonical-state.ts
       - name: Run Telegram Briefing canonical state contract
