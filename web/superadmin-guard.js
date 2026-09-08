@@ -1,7 +1,6 @@
 /* Defensive adapter for the platform control centre.
- * The control API can legitimately return null for optional sections.
- * Normalize those sections before the UI renderer touches them so one
- * missing registry does not blank the entire Superadmin screen.
+ * The overview read path is isolated from the mutation/recovery control path.
+ * Optional sections are normalized so one missing registry does not blank the screen.
  */
 (() => {
   const originalCreateClient = window.supabase?.createClient;
@@ -10,7 +9,12 @@
     const client = originalCreateClient(...args);
     const originalInvoke = client.functions.invoke.bind(client.functions);
     client.functions.invoke = async (name, options) => {
-      const result = await originalInvoke(name, options);
+      let result;
+      if (name === 'superadmin-control' && options?.body?.operation === 'overview') {
+        result = await originalInvoke('superadmin-overview', options);
+      } else {
+        result = await originalInvoke(name, options);
+      }
       if (name !== 'superadmin-control' || !result?.data || typeof result.data !== 'object') return result;
       const d = result.data;
       if (options?.body?.operation === 'overview') {
