@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
 
   if (startToken) {
     const tokenHash = await hashToken(startToken);
-    const { data: invite } = await supabase.from("agba_telegram_invitations").select("id,organization_id,role_code,expires_at,used_at,created_by,agba_organizations(name)").eq("token_hash", tokenHash).maybeSingle();
+    const { data: invite } = await supabase.from("agba_telegram_invitations").select("id,organization_id,role_code,expires_at,used_at,created_by,target_agba_user_id,agba_organizations(name)").eq("token_hash", tokenHash).maybeSingle();
     if (!invite) { await send(chatId, "This invitation is not valid. Ask your company owner to generate a new invitation."); return json({ ok: true }); }
     if (invite.used_at || new Date(invite.expires_at).getTime() < Date.now()) { await send(chatId, "This invitation has expired or has already been used. Ask your company owner for a new invitation."); return json({ ok: true }); }
     if (invite.role_code === "ceo" || invite.role_code === "owner" || invite.role_code === "company_owner") {
@@ -160,7 +160,52 @@ Deno.serve(async (req) => {
         await send(chatId, "Agba 🧠\n\nTelegram is now connected to your Agba account. You can talk to me normally."); return json({ ok: true });
       }
     }
-    await send(chatId, `This invitation is for a ${invite.role_code === "department_head" ? "department head" : "company owner"}. The account connection step is not available for a new person yet. Ask the company owner to finish setting up your Agba user first.`); return json({ ok: true });
+    if (invite.role_code === "department_head" || invite.role_code === "employee") {
+      if (!invite.target_agba_user_id) {
+        await send(chatId, "This invitation is missing its staff account. Ask your company owner to generate a new invitation.");
+        return json({ ok: true });
+      }
+      const { data: staff } = await supabase.from("agba_users")
+        .select("id,organization_id,department_id")
+        .eq("id", invite.target_agba_user_id)
+        .eq("organization_id", invite.organization_id)
+        .maybeSingle();
+      if (!staff) {
+        await send(chatId, "I couldn't verify this staff account. Ask your company owner to generate a new invitation.");
+        return json({ ok: true });
+      }
+      const { data: existingBinding } = await supabase.from("agba_telegram_bindings")
+        .select("chat_id,agba_user_id")
+        .eq("chat_id", chatId)
+        .maybeSingle();
+      if (existingBinding && existingBinding.agba_user_id !== staff.id) {
+        await send(chatId, "This Telegram account is already connected to another Agba user. Please use the correct Telegram account for this invitation.");
+        return json({ ok: true });
+      }
+      if (!existingBinding) {
+        const { error: bindError } = await supabase.from("agba_telegram_bindings").insert({
+          organization_id: staff.organization_id,
+          agba_user_id: staff.id,
+          role_code: invite.role_code,
+          chat_id: chatId,
+          telegram_user_id: msg.from?.id ? String(msg.from.id) : null,
+          telegram_username: msg.from?.username || null
+        });
+        if (bindError) {
+          console.error("telegram_staff_connect_failed", bindError);
+          await send(chatId, "I couldn't complete the Telegram connection right now. Please try the connection again.");
+          return json({ ok: true });
+        }
+      }
+      await supabase.from("agba_telegram_invitations")
+        .update({ used_at: new Date().toISOString() })
+        .eq("id", invite.id);
+      const roleLabel = invite.role_code === "department_head" ? "Department Head" : "Employee";
+      await send(chatId, `Agba 🧠
+
+Telegram is now connected to your Agba account as ${roleLabel}. You can report to Agba here.`);
+      return json({ ok: true });
+    }
   }
 
   if (text === "/id") { await send(chatId, `Your Telegram chat ID is ${chatId}.`); return json({ ok: true }); }
