@@ -24,6 +24,7 @@ app.get('/ask', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.h
 app.get('/actions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
 app.get('/departments', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
 app.get('/decisions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
+app.get('/team', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
 app.get('/superadmin', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin.html')));
 app.get('/for-ceos', (req, res) => res.sendFile(path.join(__dirname, 'web', 'for-ceos.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'app.js')));
