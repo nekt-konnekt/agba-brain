@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,10 +26,16 @@ app.get('/actions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'offi
 app.get('/departments', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
 app.get('/decisions', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
 app.get('/team', (req, res) => res.sendFile(path.join(__dirname, 'web', 'office.html')));
-app.get('/superadmin', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin.html')));
+app.get('/superadmin', (req, res) => {
+  const file = path.join(__dirname, 'web', 'superadmin.html');
+  let html = fs.readFileSync(file, 'utf8');
+  html = html.replace('<script src="/superadmin.js"></script>', '<script src="/superadmin-guard.js"></script><script src="/superadmin.js"></script>');
+  res.type('html').send(html);
+});
 app.get('/for-ceos', (req, res) => res.sendFile(path.join(__dirname, 'web', 'for-ceos.html')));
 app.get('/app.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'app.js')));
 app.get('/superadmin.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin.js')));
+app.get('/superadmin-guard.js', (req, res) => res.sendFile(path.join(__dirname, 'web', 'superadmin-guard.js')));
 app.get('/styles.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'styles.css')));
 app.get('/design-system.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'design-system.css')));
 app.get('/onboarding-styles.css', (req, res) => res.sendFile(path.join(__dirname, 'web', 'onboarding-styles.css')));
