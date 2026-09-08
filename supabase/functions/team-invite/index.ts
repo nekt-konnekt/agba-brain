@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
     const fullName = String(body?.full_name || "").trim();
     const email = String(body?.email || "").trim().toLowerCase();
     const departmentId = String(body?.department_id || "").trim();
+    const roleCode = String(body?.role_code || "department_head").trim().toLowerCase();
+    if (!['department_head', 'employee'].includes(roleCode)) return json({ error: "invalid_role" }, 400);
     if (!fullName || fullName.length < 2) return json({ error: "full_name_required" }, 400);
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return json({ error: "valid_email_required" }, 400);
     if (!departmentId) return json({ error: "department_required" }, 400);
@@ -70,15 +72,16 @@ Deno.serve(async (req) => {
     if (existing) {
       if (existing.organization_id !== caller.organization_id) return json({ error: "email_belongs_to_another_company" }, 409);
       const existingRole = Array.isArray(existing.agba_roles) ? existing.agba_roles[0]?.code : existing.agba_roles?.code;
-      if (existingRole !== "department_head") return json({ error: "email_is_already_the_company_owner" }, 409);
+      if (existingRole === "ceo") return json({ error: "email_is_already_the_company_owner" }, 409);
+      if (existingRole !== roleCode) return json({ error: "email_has_another_company_role" }, 409);
       const { data: updated, error: updateError } = await admin.from("agba_users").update({ full_name: fullName, department_id: departmentId, active: true, updated_at: new Date().toISOString() }).eq("id", existing.id).select("id, full_name, email, department_id").single();
       if (updateError) throw updateError;
       staff = updated;
     } else {
-      const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName, agba_role: "department_head" } });
+      const { data: invited, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, { data: { full_name: fullName, agba_role: roleCode } });
       if (inviteError || !invited?.user) return json({ error: inviteError?.message || "could_not_send_email_invitation" }, 400);
       emailSent = true;
-      const { data: roleRow, error: roleError } = await admin.from("agba_roles").select("id").eq("code", "department_head").single();
+      const { data: roleRow, error: roleError } = await admin.from("agba_roles").select("id").eq("code", roleCode).single();
       if (roleError) { await admin.auth.admin.deleteUser(invited.user.id); throw roleError; }
       const { data: created, error: userError } = await admin.from("agba_users").insert({ organization_id: caller.organization_id, auth_user_id: invited.user.id, role_id: roleRow.id, department_id: departmentId, full_name: fullName, email, active: true }).select("id, full_name, email, department_id").single();
       if (userError) { await admin.auth.admin.deleteUser(invited.user.id); throw userError; }
@@ -90,7 +93,7 @@ Deno.serve(async (req) => {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const { error: telegramInviteError } = await admin.from("agba_telegram_invitations").insert({
       organization_id: caller.organization_id,
-      role_code: "department_head",
+      role_code: roleCode,
       target_agba_user_id: staff.id,
       target_department_id: departmentId,
       token_hash: tokenHash,
@@ -99,8 +102,19 @@ Deno.serve(async (req) => {
     });
     if (telegramInviteError) throw telegramInviteError;
 
+    await admin.from("agba_audit_logs").insert({
+      organization_id: caller.organization_id,
+      actor_auth_user_id: authData.user.id,
+      actor_agba_user_id: caller.id,
+      action: "team.invite_created",
+      entity_type: "agba_user",
+      entity_id: staff.id,
+      metadata: { role_code: roleCode, department_id: departmentId, email, email_sent: emailSent, telegram_invite_expires_at: expiresAt },
+    });
+
     return json({
       staff,
+      role_code: roleCode,
       department: { id: department.id, name: department.name },
       email_sent: emailSent,
       telegram: { deep_link: `https://t.me/${botUsername}?start=${rawToken}`, expires_at: expiresAt },
