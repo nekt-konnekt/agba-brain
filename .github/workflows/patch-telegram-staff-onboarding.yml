@@ -1,0 +1,48 @@
+name: Patch Telegram staff onboarding
+
+on:
+  push:
+    branches:
+      - feat/executive-brief-team-onboarding
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch staff /start binding
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('supabase/functions/telegram-gateway/index.ts')
+          s = p.read_text()
+
+          old_select = 'select("id,organization_id,role_code,expires_at,used_at,created_by,agba_organizations(name)")'
+          new_select = 'select("id,organization_id,role_code,expires_at,used_at,created_by,target_agba_user_id,agba_organizations(name)")'
+          if old_select not in s:
+              raise SystemExit('invite select pattern not found')
+          s = s.replace(old_select, new_select, 1)
+
+          pattern = re.compile(r'''\n    await send\(chatId, `This invitation is for a \$\{invite\.role_code === "department_head" \? "department head" : "company owner"\}\. The account connection step is not available for a new person yet\. Ask the company owner to finish setting up your Agba user first\.`\); return json\(\{ ok: true \}\);''')
+          replacement = '''\n    if (invite.role_code === "department_head" || invite.role_code === "employee") {\n      if (!invite.target_agba_user_id) {\n        await send(chatId, "This invitation is missing its staff account. Ask your company owner to generate a new invitation.");\n        return json({ ok: true });\n      }\n      const { data: staff } = await supabase.from("agba_users")\n        .select("id,organization_id,department_id")\n        .eq("id", invite.target_agba_user_id)\n        .eq("organization_id", invite.organization_id)\n        .maybeSingle();\n      if (!staff) {\n        await send(chatId, "I couldn't verify this staff account. Ask your company owner to generate a new invitation.");\n        return json({ ok: true });\n      }\n      const { data: existingBinding } = await supabase.from("agba_telegram_bindings")\n        .select("chat_id,agba_user_id")\n        .eq("chat_id", chatId)\n        .maybeSingle();\n      if (existingBinding && existingBinding.agba_user_id !== staff.id) {\n        await send(chatId, "This Telegram account is already connected to another Agba user. Please use the correct Telegram account for this invitation.");\n        return json({ ok: true });\n      }\n      if (!existingBinding) {\n        const { error: bindError } = await supabase.from("agba_telegram_bindings").insert({\n          organization_id: staff.organization_id,\n          agba_user_id: staff.id,\n          role_code: invite.role_code,\n          chat_id: chatId,\n          telegram_user_id: msg.from?.id ? String(msg.from.id) : null,\n          telegram_username: msg.from?.username || null\n        });\n        if (bindError) {\n          console.error("telegram_staff_connect_failed", bindError);\n          await send(chatId, "I couldn't complete the Telegram connection right now. Please try the connection again.");\n          return json({ ok: true });\n        }\n      }\n      await supabase.from("agba_telegram_invitations")\n        .update({ used_at: new Date().toISOString() })\n        .eq("id", invite.id);\n      const roleLabel = invite.role_code === "department_head" ? "Department Head" : "Employee";\n      await send(chatId, `Agba 🧠\\n\\nTelegram is now connected to your Agba account as ${roleLabel}. You can report to Agba here.`);\n      return json({ ok: true });\n    }'''
+          s2, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit('refusal block pattern not found')
+          p.write_text(s2)
+          PY
+          git diff --check
+          git diff -- supabase/functions/telegram-gateway/index.ts
+      - name: Commit patch and remove workflow
+        run: |
+          git config user.name "agba-bot"
+          git config user.email "agba-bot@users.noreply.github.com"
+          git add supabase/functions/telegram-gateway/index.ts .github/workflows/patch-telegram-staff-onboarding.yml
+          git commit -m "Fix Telegram staff invitation binding" --allow-empty
+          git rm .github/workflows/patch-telegram-staff-onboarding.yml
+          git commit -m "Remove temporary Telegram onboarding patch workflow"
+          git push
