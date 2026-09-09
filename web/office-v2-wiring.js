@@ -5,11 +5,10 @@
     const target = event.target?.closest?.('[data-view]');
     if (!target || !target.closest('#officeView')) return;
     const view = target.getAttribute('data-view');
-    if (!view || typeof window.go !== 'function') return;
-    // app.js owns routing; this listener covers controls created by office-enhancements.js.
-    if (!target.classList.contains('nav-item')) {
-      event.preventDefault();
-      window.go(view);
-    }
+    if (!view) return;
+    const nav = document.querySelector(`.nav-item[data-view="${CSS.escape(view)}"]`);
+    if (!nav) return;
+    event.preventDefault();
+    nav.click();
   });
 })();
