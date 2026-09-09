@@ -25,16 +25,23 @@
   }, true);
 
   // The Office header is part of the executive experience. Replace the generic
-  // CEO label with the authenticated CEO's first name once office-read returns.
+  // CEO label with the authenticated CEO's first name once app.js populates it.
+  // Observe only #userName: observing document.body and then mutating #pageTitle
+  // creates a self-triggering MutationObserver loop and can freeze the tab.
   function syncCeoGreeting() {
     const name = document.querySelector('#userName')?.textContent?.trim();
     const title = document.querySelector('#pageTitle');
     if (!name || !title || name === 'CEO') return;
     const firstName = name.split(/\s+/)[0];
-    title.textContent = `Good morning, ${firstName}.`;
+    const greeting = `Good morning, ${firstName}.`;
+    if (title.textContent !== greeting) title.textContent = greeting;
   }
-  const observer = new MutationObserver(syncCeoGreeting);
-  observer.observe(document.body, {subtree: true, childList: true, characterData: true});
+
+  const userName = document.querySelector('#userName');
+  if (userName) {
+    const observer = new MutationObserver(syncCeoGreeting);
+    observer.observe(userName, {subtree: true, childList: true, characterData: true});
+  }
   document.addEventListener('DOMContentLoaded', syncCeoGreeting);
   setTimeout(syncCeoGreeting, 0);
 })();
