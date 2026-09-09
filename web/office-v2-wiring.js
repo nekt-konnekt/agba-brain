@@ -23,4 +23,18 @@
     document.querySelector('#v2Detail')?.classList.remove('open');
     document.querySelector('.nav-item[data-view="actions"]')?.click();
   }, true);
+
+  // The Office header is part of the executive experience. Replace the generic
+  // CEO label with the authenticated CEO's first name once office-read returns.
+  function syncCeoGreeting() {
+    const name = document.querySelector('#userName')?.textContent?.trim();
+    const title = document.querySelector('#pageTitle');
+    if (!name || !title || name === 'CEO') return;
+    const firstName = name.split(/\s+/)[0];
+    title.textContent = `Good morning, ${firstName}.`;
+  }
+  const observer = new MutationObserver(syncCeoGreeting);
+  observer.observe(document.body, {subtree: true, childList: true, characterData: true});
+  document.addEventListener('DOMContentLoaded', syncCeoGreeting);
+  setTimeout(syncCeoGreeting, 0);
 })();
