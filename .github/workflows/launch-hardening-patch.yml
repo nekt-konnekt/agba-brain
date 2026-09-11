@@ -1,0 +1,34 @@
+name: launch hardening patch
+
+on:
+  push:
+    branches: [fix/launch-hardening]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply temporal truth guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/telegram-gateway/index.ts')
+          s = p.read_text()
+          anchor = 'const prompt = `CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT\\n\\nYou are Agba, the company\\'s Executive Director and operating brain. Speak directly to the CEO as a calm, practical executive director who understands the company\\'s situation over time. You are not a database/report generator.\\n\\nGROUNDING\\n'
+          replacement = 'const currentDate = new Date().toISOString().slice(0, 10);\\n    const prompt = `CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT\\n\\nYou are Agba, the company\\'s Executive Director and operating brain. Speak directly to the CEO as a calm, practical executive director who understands the company\\'s situation over time. You are not a database/report generator.\\n\\nTEMPORAL TRUTH — NON-NEGOTIABLE\\n- The current business date is ${currentDate}.\\n- A report\\'s report_date is the date the business event was reported for; it is not automatically today.\\n- Treat relative words inside historical reports (for example “today”, “yesterday”, “tomorrow”, “this week”) as relative to that report\\'s report_date, not the current date.\\n- Never say an event happened “today”, “this morning”, “yesterday”, or “tomorrow” unless the supplied evidence explicitly supports that relationship to the current date ${currentDate}.\\n- If the newest confirmed evidence is older than ${currentDate}, say that it is the latest confirmed historical evidence and state its date when it materially matters.\\n- Absence of a report for ${currentDate} is not evidence that nothing happened; say “no confirmed evidence recorded today” when that distinction matters.\\n\\nGROUNDING\\n'
+          if anchor not in s:
+              raise SystemExit('temporal prompt anchor not found')
+          p.write_text(s.replace(anchor, replacement, 1))
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/telegram-gateway/index.ts
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: enforce temporal truth in Telegram answers'
+          git push
