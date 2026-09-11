@@ -32,3 +32,5 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m 'fix: enforce temporal truth in Telegram answers'
           git push
+      - name: Verify patch
+        run: grep -q 'TEMPORAL TRUTH — NON-NEGOTIABLE' supabase/functions/telegram-gateway/index.ts
