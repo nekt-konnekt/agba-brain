@@ -1,0 +1,32 @@
+name: repair telegram briefing boundaries
+
+on:
+  push:
+    branches:
+      - fix/telegram-executive-director-contract-final
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/telegram-executive-director-contract-final
+      - name: Normalize briefing boundary markers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/functions/telegram-gateway/index.ts')
+          s=p.read_text()
+          s=s.replace('if(!text)return json({ok:true});','if (!text) return json({ ok: true });',1)
+          p.write_text(s)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/telegram-gateway/index.ts
+          git diff --cached --quiet || git commit -m 'fix: normalize Telegram briefing boundary marker'
+          git push origin HEAD:fix/telegram-executive-director-contract-final
