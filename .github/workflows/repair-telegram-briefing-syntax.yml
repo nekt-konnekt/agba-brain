@@ -1,0 +1,37 @@
+name: repair telegram briefing syntax
+
+on:
+  push:
+    branches:
+      - fix/telegram-executive-director-contract-final
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/telegram-executive-director-contract-final
+      - name: Normalize briefing handler marker
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('supabase/functions/telegram-gateway/index.ts')
+          s=p.read_text()
+          old='if(text==="/briefing")'
+          new='if (text === "/briefing")'
+          if old in s:
+              s=s.replace(old,new,1)
+              p.write_text(s)
+          elif new not in s:
+              raise SystemExit('briefing handler not found')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add supabase/functions/telegram-gateway/index.ts
+          git diff --cached --quiet || git commit -m 'fix: normalize Telegram briefing handler contract marker'
+          git push origin HEAD:fix/telegram-executive-director-contract-final
