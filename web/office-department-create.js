@@ -53,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // and Office V2's Business Pulse panel are populated from the same
       // office-read payload, so a single reload keeps everything in sync.
       if (typeof window.loadOffice === 'function') await window.loadOffice();
+      if (typeof window.refreshOfficeV2 === 'function') await window.refreshOfficeV2();
     } catch (error) {
       setStatus(error?.message || 'Could not create department.', true);
     } finally {
