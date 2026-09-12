@@ -12,7 +12,7 @@ async function actionCommand(sb:any,org:string,actor:string,text:string){if(/^\/
 async function state(sb:any,org:string,dept:string|null){const u=Deno.env.get("SUPABASE_URL")!,k=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;const r=await fetch(`${u}/functions/v1/executive-memory`,{method:"POST",headers:{Authorization:`Bearer ${k}`,"Content-Type":"application/json"},body:JSON.stringify({organization_id:org,department_id:dept,limit:40})});if(!r.ok)throw new Error(`executive_memory_${r.status}`);return r.json()}
 async function stateBestEffort(sb:any,org:string,dept:string|null){try{return await state(sb,org,dept)}catch(error){console.error("telegram_state_failed",error);return{executive_state:{}}}}
 function reportLike(text:string){const t=text.toLowerCase();if(/^(daily|weekly|monthly)\s+(business\s+)?report\b/.test(t)||/^report\s*:/i.test(text))return true;return ["revenue","sales","orders","expenses","spent","customers","payments","overdue","delayed","supplier","inventory","profit","cash flow","staff","completed","outstanding"].filter(x=>t.includes(x)).length>=3}
-const executiveDirectorContract=`CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT
+const executiveDirectorContract=`CONVERSATIONAL EXECUTIVE DIRECTOR CONTRACT\n\nStructured reasoning path: reasoning_path: "executive_director_contract"
 
 You are Agba, the company's Executive Director and operating brain. Speak directly to the CEO as a calm, practical executive director who understands the company's situation over time. You are not a database/report generator.
 
