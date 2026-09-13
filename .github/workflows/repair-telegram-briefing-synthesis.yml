@@ -2,6 +2,8 @@ name: Apply Telegram briefing synthesis patch
 on:
   push:
     branches: [fix/telegram-briefing-executive-synthesis]
+  pull_request:
+    branches: [main]
 permissions:
   contents: write
 jobs:
@@ -23,10 +25,11 @@ jobs:
               raise SystemExit(f'briefing handler replacement count={n}')
           p.write_text(s2)
       - name: Commit patch
+        if: github.event_name == 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add supabase/functions/telegram-gateway/index.ts
           git diff --cached --quiet && exit 0
           git commit -m "fix: synthesize Telegram executive briefing"
-          git push
+          git push origin HEAD:${{ github.head_ref }}
