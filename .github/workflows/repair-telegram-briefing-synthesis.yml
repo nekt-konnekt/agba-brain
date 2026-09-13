@@ -19,10 +19,11 @@ jobs:
           p = Path('supabase/functions/telegram-gateway/index.ts')
           s = p.read_text()
           replacement = r'''if (text === "/briefing"){await typing(chatId);try{const canonical=await getCanonicalExecutiveState(sb,binding.organization_id,role==="department_head"?dept:null),state=canonical.executive_state||{};const noise=/(action executed|execution completion alone|management action completed|prepare and distribute the morning brief|TELEGRAM-CONNECTOR-E2E|PROPOSAL-EXECUTION-E2E|e2e-action-execution)/i;const human=(x:any)=>String(x?.title||x?.summary||x?.what_happened||x?.description||"").replace(/\s+/g," ").trim();const attention=(Array.isArray(state.what_needs_attention)?state.what_needs_attention:[]).concat(Array.isArray(state.actions)?state.actions:[]).filter((x:any)=>!noise.test(human(x))).map(human).filter(Boolean).filter((x:string,i:number,a:string[])=>a.findIndex(y=>norm(y)===norm(x))===i).slice(0,3);const changed=(Array.isArray(state.what_changed)?state.what_changed:[]).filter((x:any)=>!noise.test(human(x))).map(human).filter(Boolean).filter((x:string,i:number,a:string[])=>a.findIndex(y=>norm(y)===norm(x))===i).slice(0,3);const parts:string[]=[];if(attention.length)parts.push(`**Needs attention**\n${attention.map(x=>`• ${x}`).join("\n")}`);if(changed.length)parts.push(`**What changed**\n${changed.map(x=>`• ${x}`).join("\n")}`);void state.decisions;void state.outcomes;void state.unresolved;void canonical.transitions;await send(chatId,parts.length?`Agba 🧠\n\n${parts.join("\n\n")}`:"Agba has no material business changes or unresolved items to report right now.")}catch(e){console.error("telegram_briefing_failed",e);await send(chatId,"Agba could not prepare the briefing right now. Try again in a moment.")}return json({ok:true})}'''
-          pattern = r'if \(text === "/briefing"\)\{.*?\}if \(!text\) return json\(\{ ok: true \}\);'
-          s2, n = re.subn(pattern, replacement + 'if (!text) return json({ ok: true });', s, count=1, flags=re.S)
-          if n != 1:
-              raise SystemExit(f'briefing handler replacement count={n}')
+          start = s.find('if (text === "/briefing"){')
+          end = s.find('if (!text) return json({ ok: true });', start)
+          if start < 0 or end < 0 or end <= start:
+              raise SystemExit(f'briefing boundaries not found: start={start} end={end}')
+          s2 = s[:start] + replacement + s[end:]
           p.write_text(s2)
       - name: Commit patch
         if: github.event_name == 'pull_request'
